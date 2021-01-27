@@ -1,0 +1,7 @@
+programa aaaa;
+    variables
+        a:enter;
+        b:real;
+        c:boolea;
+    fvariables
+fprograma
