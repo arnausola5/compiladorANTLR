@@ -2,14 +2,46 @@
 
 grammar main;
 
+@header {
+    import java.io.*;
+}
+
+// Atributs i mètodes de la classe ANTLR
+@parser::members {
+    SymTable<Registre> TS = new SymTable<Registre>(1000);
+    boolean error = false;
+
+    //override method
+    public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e)    {
+         super.notifyErrorListeners(offendingToken,msg,e);
+         error=true;
+    }
+}
+
+
 // Regles sintàctiques
 inici: blocDeclaracioConstants? blocDeclaracioTipus? blocAccionsFuncions? programa blocImplementacio?;
 
-blocDeclaracioConstants : TK_PC_CONSTANTS (variableConstants)* TK_PC_FCONSTANTS;
-variableConstants : tipusBasic TK_IDENT TK_ASSIGNACIO valorTipusBasic TK_SEMI;
-tipusBasic : TK_TB_BOOLEA | TK_TB_REAL | TK_TB_ENTER | TK_TB_CAR | TK_TB_DATA;
-valorTipusBasic : TK_BOOLEA | TK_DATA | valorEnter | TK_REAL | TK_CAR;
-valorEnter : TK_ZERO | TK_ENTER;
+blocDeclaracioConstants: TK_PC_CONSTANTS (variableConstants)* TK_PC_FCONSTANTS;
+variableConstants : tb=tipusBasic i=TK_IDENT TK_ASSIGNACIO vtb=valorTipusBasic TK_SEMI
+                    {
+                        if($tb.t != $vtb.t) {
+                            error = true;
+                            System.out.println("Error al assignar constant a la línia " + $i.line);
+                            // notifyErrorListeners(variableConstants, "El tipus de tipusBasic i valorTipusBasic
+                        }
+                    };
+tipusBasic returns [char t]: TK_TB_BOOLEA { $t = 'B'; }
+                                | TK_TB_REAL { $t = 'R'; }
+                                | TK_TB_ENTER { $t = 'E'; }
+                                | TK_TB_CAR { $t = 'C'; }
+                                | TK_TB_DATA { $t = 'D'; };
+valorTipusBasic returns [char t]: TK_BOOLEA { $t = 'B'; }
+                                    | TK_DATA { $t = 'D'; }
+                                    | ve=valorEnter {$t = $ve.t; }
+                                    | TK_REAL { $t = 'R'; }
+                                    | TK_CAR { $t = 'C'; };
+valorEnter returns [char t]: TK_ZERO { $t = 'E'; } | TK_ENTER { $t = 'E'; };
 
 blocDeclaracioTipus : TK_PC_TIPUS (tipus)* TK_PC_FTIPUS;
 tipus : TK_IDENT TK_DOSPUNTS (tipusBasic | tipusBasicVector | tipusBasicTupla) TK_SEMI;
@@ -26,18 +58,69 @@ declaracioAccio : TK_PC_ACCIO TK_IDENT TK_LPAREN parametres? TK_RPAREN TK_SEMI;
 programa: TK_PC_PROGRAMA TK_IDENT blocDeclaracioVariables? sentencia* TK_PC_FPROGRAMA;
 
 blocDeclaracioVariables: TK_PC_VARIABLES variable* TK_PC_FVARIABLES;
-variable : TK_IDENT (TK_COMA TK_IDENT)* TK_DOSPUNTS (tipusBasic | TK_IDENT) TK_SEMI;
+variable locals [String vars] : i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* TK_DOSPUNTS (tb=tipusBasic
+                                {
+                                    String[] v = $vars.split(',');
+                                    for(int i = 0; i < v.length(); i++) {
+                                        if(!TS.existeix(v[i])) {
+                                            TS.inserir(v[i], new Registre(v[i], $tb.t);
+                                        } else {
+                                            error = true;
+                                            System.out.println("Error al declarar una variable ja existent a la línia " + $i.line);
+                                        }
+                                    }
+                                }
+                                | TK_IDENT) TK_SEMI;
 
-ifThenElse: expressio1 TK_INTERROGANT expressio1 TK_DOSPUNTS expressio1;
-expressio : ifThenElse | expressio1;
+ifThenElse returns [char t] : c=expressio1 i=TK_INTERROGANT
+            {
+                if($c.t != 'B') {
+                    error = true;
+                    System.out.println("Error al assignar una condició no booleana a la línia " + $i.line);
+                }
+            }
+            ec=expressio1 TK_DOSPUNTS ef=expressio1
+            {
+                if($ec.t != $ef.t && !(($ec.t == 'R' && $ef.t == 'E') || ($ec.t == 'E' && $ef.t == 'R'))) {
+                    error = true;
+                    System.out.println("Error de tipus a expressióCert i expressióFals a la línia " + $i.line);
+                } else {
+                    if($ec.t != $ef.t)
+                        $t = 'R';
+                    else
+                        $t = $ec.t;
+                }
+            };
+expressio returns [char t] : ite=ifThenElse { $t = $ite.t; } | e=expressio1 { $t = $e.t; };
 expressio1 : expressio2 ((TK_AND | TK_OR) expressio2)*;
 expressio2 : expressio3 (operadorsBooleans expressio3)*;
 operadorsBooleans : TK_OP_IGUALTAT | TK_OP_DESIGUALTAT | TK_MESPETIT | TK_MESPETIT_IGUAL | TK_MESGRAN | TK_MESGRAN_IGUAL;
 expressio3 : expressio4 ((TK_OP_PLUS | TK_OP_MENYS) expressio4)*;
 expressio4 : expressio5 ((TK_STAR | TK_OP_DIVISIO_REAL | TK_OP_DIVISIO_ENTERA | TK_OP_MODUL) expressio5)*;
-expressio5 : (TK_NEGACIO | TK_OP_MENYS_UNARI)? expressio6;
-expressio6 : valor | TK_LPAREN expressio TK_RPAREN;
-valor: valorTipusBasic | TK_STRING | TK_IDENT | accesTupla | accesVector | cridaFuncio;
+expressio5 returns [char t] locals [int p] : { $p = 0; }(TK_NEGACIO { $p = 1; } | TK_OP_MENYS_UNARI { $p = 2; })? e=expressio6
+                            {
+                                if($p == 0)
+                                    $t = $e.t;
+                                else if($p == 1 && $e.t == 'B')
+                                    $t = $e.t;
+                                else if($p == 2 && ($e.t = 'E' || $e.t = 'R'))
+                                    $t = $e.t;
+                                else {
+                                    error = true;
+                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                }
+                            };
+expressio6 returns [char t] : v=valor { $t = $v.t; } | TK_LPAREN e=expressio { $t = $e.t; } TK_RPAREN;
+valor returns [char t] : vtb=valorTipusBasic { $t = $vtb.t; } | TK_STRING { $t = 'S'; } | i=TK_IDENT
+                        {
+                            if(TS.existeix($i.text))
+                                $t = TS.obtenir($i.text).getTipus();
+                            else {
+                                error = true;
+                                System.out.println("No existeix la variable a la línia " + $i.line);
+                            }
+                        }
+                        | accesTupla | accesVector | cridaFuncio;
 accesTupla : TK_IDENT TK_PUNT TK_IDENT;
 accesVector : TK_IDENT TK_OVECTOR expressio TK_TVECTOR;
 cridaFuncio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN;
@@ -78,7 +161,7 @@ TK_OP_DESIGUALTAT: '!=';
 TK_SEMI: ';';
 TK_COMA: ',';
 TK_PUNT: '.';
-TK_PC_PROGRAMA: 'programa' { System.out.println("He reconegut el programa") };
+TK_PC_PROGRAMA: 'programa' { System.out.println("He reconegut el programa"); };
 TK_PC_FPROGRAMA: 'fprograma';
 TK_PC_PERIODE: 'periode';
 TK_PC_PER: 'per';
