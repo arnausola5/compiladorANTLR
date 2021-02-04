@@ -1,3 +1,6 @@
 constants
-real PI  := 3;
+real PI  := 3.0;
 fconstants
+
+programa xupala
+fprograma

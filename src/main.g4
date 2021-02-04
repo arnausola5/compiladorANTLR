@@ -60,10 +60,10 @@ programa: TK_PC_PROGRAMA TK_IDENT blocDeclaracioVariables? sentencia* TK_PC_FPRO
 blocDeclaracioVariables: TK_PC_VARIABLES variable* TK_PC_FVARIABLES;
 variable locals [String vars] : i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* TK_DOSPUNTS (tb=tipusBasic
                                 {
-                                    String[] v = $vars.split(',');
-                                    for(int i = 0; i < v.length(); i++) {
+                                    String[] v = $vars.split(",");
+                                    for(int i = 0; i < v.length; i++) {
                                         if(!TS.existeix(v[i])) {
-                                            TS.inserir(v[i], new Registre(v[i], $tb.t);
+                                            TS.inserir(v[i], new Registre(v[i], $tb.t));
                                         } else {
                                             error = true;
                                             System.out.println("Error al declarar una variable ja existent a la línia " + $i.line);
@@ -92,18 +92,89 @@ ifThenElse returns [char t] : c=expressio1 i=TK_INTERROGANT
                 }
             };
 expressio returns [char t] : ite=ifThenElse { $t = $ite.t; } | e=expressio1 { $t = $e.t; };
-expressio1 : expressio2 ((TK_AND | TK_OR) expressio2)*;
-expressio2 : expressio3 (operadorsBooleans expressio3)*;
+expressio1 returns [char t] locals [int p] : e1=expressio2 { $t = $e1.t; }
+                                            ((i=TK_AND { $p = 0; }| i=TK_OR { $p = 1; }) e2=expressio2
+                                            {
+                                                if($t == 'B' && $e2.t == 'B') {
+                                                    if($p == 0)
+                                                        $t = 'B';
+                                                    else
+                                                        $t = 'B';
+                                                }
+                                                else {
+                                                    error = true;
+                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                }
+                                            }
+                                            )*;
+expressio2 returns [char t] : e1=expressio3 { $t = $e1.t; }(operadorsBooleans e2=expressio3
+                                {
+                                    if(($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R'))
+                                        $t = 'B';
+                                    else if($t == 'B' && $e2.t == 'B')
+                                        $t = 'B';
+                                    else if($t == 'C' && $e2.t == 'C')
+                                        $t = 'B';
+                                    else {
+                                        error = true;
+                                        System.out.println("Conflicte de tipus amb operadors booleans");
+                                    }
+
+
+                                }
+                                )*;
 operadorsBooleans : TK_OP_IGUALTAT | TK_OP_DESIGUALTAT | TK_MESPETIT | TK_MESPETIT_IGUAL | TK_MESGRAN | TK_MESGRAN_IGUAL;
-expressio3 : expressio4 ((TK_OP_PLUS | TK_OP_MENYS) expressio4)*;
-expressio4 : expressio5 ((TK_STAR | TK_OP_DIVISIO_REAL | TK_OP_DIVISIO_ENTERA | TK_OP_MODUL) expressio5)*;
-expressio5 returns [char t] locals [int p] : { $p = 0; }(TK_NEGACIO { $p = 1; } | TK_OP_MENYS_UNARI { $p = 2; })? e=expressio6
+expressio3 returns [char t] locals [int p] : e1=expressio4 { $t = $e1.t; }
+                                                            ((i=TK_OP_PLUS { $p = 0; } | i=TK_OP_MENYS { $p = 1; }) e2=expressio4
+                                                            {
+                                                                if(($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R')) {
+                                                                    if($p == 0) {
+                                                                        if($t == 'R' || $e2.t == 'R')
+                                                                            $t = 'R';
+                                                                        else
+                                                                            $t = 'E';
+                                                                    }
+                                                                    else {
+                                                                        if($t == 'R' || $e2.t == 'R')
+                                                                            $t = 'R';
+                                                                        else
+                                                                            $t = 'E';
+                                                                    }
+                                                                }
+                                                                else {
+                                                                    error = true;
+                                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                                }
+                                                            }
+                                                            )*;
+expressio4 returns [char t] locals [int p] : e1=expressio5 { $t = $e1.t; }
+                                            ((i=TK_STAR { $p = 0; } | i=TK_OP_DIVISIO_REAL { $p = 1; } | i=TK_OP_DIVISIO_ENTERA { $p = 2; } | i=TK_OP_MODUL { $p = 3; }) e2=expressio5
+                                            {
+                                                if($p == 0 && ($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R')) {
+                                                    if($t == 'R' || $e2.t == 'R')
+                                                        $t = 'R';
+                                                    else
+                                                        $t = 'E';
+                                                }
+                                                else if($p == 1 && ($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R'))
+                                                    $t = 'R';
+                                                else if($p == 2 && $t == 'E'&& $e2.t == 'E')
+                                                    $t = 'E';
+                                                else if($p == 3 && $t == 'E'&& $e2.t == 'E')
+                                                    $t = 'E';
+                                                else {
+                                                    error = true;
+                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                }
+                                            }
+                                            )*;
+expressio5 returns [char t] locals [int p] : { $p = 0; }(i=TK_NEGACIO { $p = 1; } | i=TK_OP_MENYS_UNARI { $p = 2; })? e=expressio6
                             {
                                 if($p == 0)
                                     $t = $e.t;
                                 else if($p == 1 && $e.t == 'B')
                                     $t = $e.t;
-                                else if($p == 2 && ($e.t = 'E' || $e.t = 'R'))
+                                else if($p == 2 && ($e.t == 'E' || $e.t == 'R'))
                                     $t = $e.t;
                                 else {
                                     error = true;
