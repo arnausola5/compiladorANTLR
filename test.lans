@@ -1,5 +1,5 @@
 constants
-real PI  := 3.0;
+enter PI  := 3;
 fconstants
 
 programa xupala

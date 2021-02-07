@@ -4,12 +4,14 @@ grammar main;
 
 @header {
     import java.io.*;
+    import java.util.Vector;
 }
 
 // Atributs i mètodes de la classe ANTLR
 @parser::members {
     SymTable<Registre> TS = new SymTable<Registre>(1000);
     boolean error = false;
+    Bytecode x;
 
     //override method
     public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e)    {
@@ -20,9 +22,18 @@ grammar main;
 
 
 // Regles sintàctiques
-inici: blocDeclaracioConstants? blocDeclaracioTipus? blocAccionsFuncions? programa blocImplementacio?;
+inici
+@init   {
+            x = new Bytecode("Compilat");
+            Vector<Long> codeMain = new Vector<Long>(1000);
+        }
+        : blocDeclaracioConstants? blocDeclaracioTipus? blocAccionsFuncions? p=programa blocImplementacio?
+        {
+            x.write();
+        };
 
-blocDeclaracioConstants: TK_PC_CONSTANTS (variableConstants)* TK_PC_FCONSTANTS;
+blocDeclaracioConstants : TK_PC_CONSTANTS (vc=variableConstants)* TK_PC_FCONSTANTS;
+
 variableConstants : tb=tipusBasic i=TK_IDENT TK_ASSIGNACIO vtb=valorTipusBasic TK_SEMI
                     {
                         if($tb.t != $vtb.t) {
@@ -30,18 +41,26 @@ variableConstants : tb=tipusBasic i=TK_IDENT TK_ASSIGNACIO vtb=valorTipusBasic T
                             System.out.println("Error al assignar constant a la línia " + $i.line);
                             // notifyErrorListeners(variableConstants, "El tipus de tipusBasic i valorTipusBasic
                         }
+                        else {
+                            if(TS.existeix($i.text)) {
+                                error = true;
+                                System.out.println("La constant ja existeix, línia " + $i.line);
+                            }
+                            else
+                                TS.inserir($i.text, new Registre($i.text, $tb.t, x.addConstName($i.text, String.valueOf($tb.t), $vtb.v).intValue()));
+                        }
                     };
-tipusBasic returns [char t]: TK_TB_BOOLEA { $t = 'B'; }
-                                | TK_TB_REAL { $t = 'R'; }
-                                | TK_TB_ENTER { $t = 'E'; }
+tipusBasic returns [char t]: TK_TB_BOOLEA { $t = 'Z'; }
+                                | TK_TB_REAL { $t = 'F'; }
+                                | TK_TB_ENTER { $t = 'I'; }
                                 | TK_TB_CAR { $t = 'C'; }
                                 | TK_TB_DATA { $t = 'D'; };
-valorTipusBasic returns [char t]: TK_BOOLEA { $t = 'B'; }
+valorTipusBasic returns [char t, String v]: tk=TK_BOOLEA { $t = 'Z'; $v = $tk.text; }
                                     | TK_DATA { $t = 'D'; }
-                                    | ve=valorEnter {$t = $ve.t; }
-                                    | TK_REAL { $t = 'R'; }
-                                    | TK_CAR { $t = 'C'; };
-valorEnter returns [char t]: TK_ZERO { $t = 'E'; } | TK_ENTER { $t = 'E'; };
+                                    | ve=valorEnter {$t = $ve.t; $v = $ve.v; }
+                                    | tk=TK_REAL { $t = 'F'; $v = $tk.text; }
+                                    | tk=TK_CAR { $t = 'C'; $v = $tk.text; };
+valorEnter returns [char t, String v]: TK_ZERO { $t = 'I'; $v = "0"; } | tk=TK_ENTER { $t = 'I'; $v = $tk.text; };
 
 blocDeclaracioTipus : TK_PC_TIPUS (tipus)* TK_PC_FTIPUS;
 tipus : TK_IDENT TK_DOSPUNTS (tipusBasic | tipusBasicVector | tipusBasicTupla) TK_SEMI;
@@ -74,19 +93,19 @@ variable locals [String vars] : i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_ID
 
 ifThenElse returns [char t] : c=expressio1 i=TK_INTERROGANT
             {
-                if($c.t != 'B') {
+                if($c.t != 'Z') {
                     error = true;
                     System.out.println("Error al assignar una condició no booleana a la línia " + $i.line);
                 }
             }
             ec=expressio1 TK_DOSPUNTS ef=expressio1
             {
-                if($ec.t != $ef.t && !(($ec.t == 'R' && $ef.t == 'E') || ($ec.t == 'E' && $ef.t == 'R'))) {
+                if($ec.t != $ef.t && !(($ec.t == 'F' && $ef.t == 'I') || ($ec.t == 'I' && $ef.t == 'F'))) {
                     error = true;
                     System.out.println("Error de tipus a expressióCert i expressióFals a la línia " + $i.line);
                 } else {
                     if($ec.t != $ef.t)
-                        $t = 'R';
+                        $t = 'F';
                     else
                         $t = $ec.t;
                 }
@@ -95,11 +114,11 @@ expressio returns [char t] : ite=ifThenElse { $t = $ite.t; } | e=expressio1 { $t
 expressio1 returns [char t] locals [int p] : e1=expressio2 { $t = $e1.t; }
                                             ((i=TK_AND { $p = 0; }| i=TK_OR { $p = 1; }) e2=expressio2
                                             {
-                                                if($t == 'B' && $e2.t == 'B') {
+                                                if($t == 'Z' && $e2.t == 'Z') {
                                                     if($p == 0)
-                                                        $t = 'B';
+                                                        $t = 'Z';
                                                     else
-                                                        $t = 'B';
+                                                        $t = 'Z';
                                                 }
                                                 else {
                                                     error = true;
@@ -109,12 +128,12 @@ expressio1 returns [char t] locals [int p] : e1=expressio2 { $t = $e1.t; }
                                             )*;
 expressio2 returns [char t] : e1=expressio3 { $t = $e1.t; }(operadorsBooleans e2=expressio3
                                 {
-                                    if(($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R'))
-                                        $t = 'B';
-                                    else if($t == 'B' && $e2.t == 'B')
-                                        $t = 'B';
+                                    if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F'))
+                                        $t = 'Z';
+                                    else if($t == 'Z' && $e2.t == 'Z')
+                                        $t = 'Z';
                                     else if($t == 'C' && $e2.t == 'C')
-                                        $t = 'B';
+                                        $t = 'Z';
                                     else {
                                         error = true;
                                         System.out.println("Conflicte de tipus amb operadors booleans");
@@ -127,18 +146,18 @@ operadorsBooleans : TK_OP_IGUALTAT | TK_OP_DESIGUALTAT | TK_MESPETIT | TK_MESPET
 expressio3 returns [char t] locals [int p] : e1=expressio4 { $t = $e1.t; }
                                                             ((i=TK_OP_PLUS { $p = 0; } | i=TK_OP_MENYS { $p = 1; }) e2=expressio4
                                                             {
-                                                                if(($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R')) {
+                                                                if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
                                                                     if($p == 0) {
-                                                                        if($t == 'R' || $e2.t == 'R')
-                                                                            $t = 'R';
+                                                                        if($t == 'F' || $e2.t == 'F')
+                                                                            $t = 'F';
                                                                         else
-                                                                            $t = 'E';
+                                                                            $t = 'I';
                                                                     }
                                                                     else {
-                                                                        if($t == 'R' || $e2.t == 'R')
-                                                                            $t = 'R';
+                                                                        if($t == 'F' || $e2.t == 'F')
+                                                                            $t = 'F';
                                                                         else
-                                                                            $t = 'E';
+                                                                            $t = 'I';
                                                                     }
                                                                 }
                                                                 else {
@@ -150,18 +169,18 @@ expressio3 returns [char t] locals [int p] : e1=expressio4 { $t = $e1.t; }
 expressio4 returns [char t] locals [int p] : e1=expressio5 { $t = $e1.t; }
                                             ((i=TK_STAR { $p = 0; } | i=TK_OP_DIVISIO_REAL { $p = 1; } | i=TK_OP_DIVISIO_ENTERA { $p = 2; } | i=TK_OP_MODUL { $p = 3; }) e2=expressio5
                                             {
-                                                if($p == 0 && ($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R')) {
-                                                    if($t == 'R' || $e2.t == 'R')
-                                                        $t = 'R';
+                                                if($p == 0 && ($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
+                                                    if($t == 'F' || $e2.t == 'F')
+                                                        $t = 'F';
                                                     else
-                                                        $t = 'E';
+                                                        $t = 'I';
                                                 }
-                                                else if($p == 1 && ($t == 'E' || $t == 'R') && ($e2.t == 'E' || $e2.t == 'R'))
-                                                    $t = 'R';
-                                                else if($p == 2 && $t == 'E'&& $e2.t == 'E')
-                                                    $t = 'E';
-                                                else if($p == 3 && $t == 'E'&& $e2.t == 'E')
-                                                    $t = 'E';
+                                                else if($p == 1 && ($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F'))
+                                                    $t = 'F';
+                                                else if($p == 2 && $t == 'I'&& $e2.t == 'I')
+                                                    $t = 'I';
+                                                else if($p == 3 && $t == 'I'&& $e2.t == 'I')
+                                                    $t = 'I';
                                                 else {
                                                     error = true;
                                                     System.out.println("Conflicte de tipus a la línia " + $i.line);
@@ -172,9 +191,9 @@ expressio5 returns [char t] locals [int p] : { $p = 0; }(i=TK_NEGACIO { $p = 1; 
                             {
                                 if($p == 0)
                                     $t = $e.t;
-                                else if($p == 1 && $e.t == 'B')
+                                else if($p == 1 && $e.t == 'Z')
                                     $t = $e.t;
-                                else if($p == 2 && ($e.t == 'E' || $e.t == 'R'))
+                                else if($p == 2 && ($e.t == 'I' || $e.t == 'F'))
                                     $t = $e.t;
                                 else {
                                     error = true;
@@ -182,7 +201,7 @@ expressio5 returns [char t] locals [int p] : { $p = 0; }(i=TK_NEGACIO { $p = 1; 
                                 }
                             };
 expressio6 returns [char t] : v=valor { $t = $v.t; } | TK_LPAREN e=expressio { $t = $e.t; } TK_RPAREN;
-valor returns [char t] : vtb=valorTipusBasic { $t = $vtb.t; } | TK_STRING { $t = 'S'; } | i=TK_IDENT
+valor returns [char t, String v] : vtb=valorTipusBasic { $t = $vtb.t; } | TK_STRING { $t = 'S'; } | i=TK_IDENT
                         {
                             if(TS.existeix($i.text))
                                 $t = TS.obtenir($i.text).getTipus();
@@ -198,15 +217,73 @@ cridaFuncio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN;
 
 sentencia : (asignacio | condicional | per | mentre | cridaAccio | llegir | escriure | escriureln);
 
-asignacio : (TK_IDENT | accesTupla | accesVector) TK_ASSIGNACIO expressio TK_SEMI;
-condicional : TK_PC_SI expressio TK_PC_LLAVORS sentencia* (TK_PC_ALTRAMENT sentencia*)? TK_PC_FSI;
-per : TK_PC_PER TK_IDENT TK_PC_DE expressio TK_PC_FINS expressio TK_PC_FER sentencia* TK_PC_FPER;
-mentre : TK_PC_MENTRE expressio TK_PC_FER sentencia* TK_PC_FMENTRE;
+asignacio : (i=TK_IDENT | accesTupla | accesVector) TK_ASSIGNACIO e=expressio TK_SEMI
+                            {
+                                if(!(TS.existeix($i.text) && TS.obtenir($i.text).tipus == $e.t)) {
+                                    error = true;
+                                    System.out.println("Error al assignar un valor a una variable a la línia " + $i.line);
+                                }
+                            };
+condicional : i=TK_PC_SI e=expressio TK_PC_LLAVORS sentencia* (TK_PC_ALTRAMENT sentencia*)? TK_PC_FSI
+                            {
+                                if($e.t != 'Z') {
+                                    error = true;
+                                    System.out.println("Error al fer un condicional a la línia " + $i.line);
+                                }
+                            };
+per : i=TK_PC_PER TK_IDENT TK_PC_DE e1=expressio TK_PC_FINS e2=expressio TK_PC_FER sentencia* TK_PC_FPER
+                            {
+                                if(!($e1.t == 'I' && ($e2.t == 'I'))) {
+                                    error = true;
+                                    System.out.println("Error al fer un per a la línia " + $i.line);
+                                }
+                            };
+mentre : i=TK_PC_MENTRE e=expressio TK_PC_FER sentencia*
+                            {
+                                if($e.t != 'Z') {
+                                    error = true;
+                                    System.out.println("Error al fer un while a la línia " + $i.line);
+                                }
+                            };
 cridaAccio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN TK_SEMI;
 
-llegir : TK_PC_LLEGIR TK_LPAREN TK_IDENT TK_RPAREN TK_SEMI;
-escriure : TK_PC_ESCRIURE TK_LPAREN expressio (TK_COMA expressio)* TK_RPAREN TK_SEMI;
-escriureln : TK_PC_ESCRIURELN TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN TK_SEMI;
+llegir : TK_PC_LLEGIR TK_LPAREN i=TK_IDENT TK_RPAREN TK_SEMI
+            {
+                if(!TS.existeix($i.text)) {
+                    error = true;
+                    System.out.println("Error al llegir a la línia " + $i.line);
+                }
+            };
+escriure : i=TK_PC_ESCRIURE TK_LPAREN e1=expressio
+            {
+                if($e1.t != 'S') {
+                    error = true;
+                    System.out.println("Error al escriure a la línia " + $i.line);
+                }
+            }
+            (TK_COMA e2=expressio
+            {
+               if($e2.t != 'S') {
+                   error = true;
+                   System.out.println("Error al escriure a la línia " + $i.line);
+               }
+            }
+            )* TK_RPAREN TK_SEMI;
+escriureln : i=TK_PC_ESCRIURELN TK_LPAREN (e1=expressio
+            {
+                if($e1.t != 'S') {
+                    error = true;
+                    System.out.println("Error al escriureln a la línia " + $i.line);
+                }
+            }
+            (TK_COMA e2=expressio
+            {
+                if($e2.t != 'S') {
+                   error = true;
+                   System.out.println("Error al escriureln a la línia " + $i.line);
+               }
+            }
+            )*)? TK_RPAREN TK_SEMI;
 
 blocImplementacio : (implementacioFuncio | implementacioAccio)*;
 implementacioAccio : TK_PC_ACCIO TK_IDENT TK_LPAREN parametres? TK_RPAREN blocDeclaracioVariables? sentencia* TK_PC_FACCIO;
@@ -293,6 +370,6 @@ TK_DATA: (DIGIT | '0') DIGIT '/' (DIGIT | '0') DIGIT '/' (DIGIT | '0') (DIGIT | 
 TK_ZERO: '0';
 TK_ENTER: DIGIT (DIGIT | '0')*;
 TK_IDENT: LLETRA (LLETRA | DIGIT | '0' | '_')*;
-TK_REAL: (DIGIT | '0')* '.' (DIGIT | '0')* (('E' | 'E-') TK_ENTER)?;
+TK_REAL: (DIGIT | '0')* '.' (DIGIT | '0')* (('I' | 'E-') TK_ENTER)?;
 TK_CAR: '\'' (CARACTERS_ASCII | ' ') '\'';
 TK_STRING: '"' (CARACTERS_ASCII | ' ')* '"';
