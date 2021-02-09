@@ -64,7 +64,6 @@ public static void main(String[] args) {
 
 	// Vector de Long per col.locar el codi del Main
   	Vector<Long> codeMain=new Vector<Long>(100);
- 
 
    	// Imprimim un missatge per pantalla
     codeMain.add(x.LDC_W);

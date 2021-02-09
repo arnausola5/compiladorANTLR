@@ -12,6 +12,7 @@ grammar main;
     SymTable<Registre> TS = new SymTable<Registre>(1000);
     boolean error = false;
     Bytecode x;
+    int contVar = 0;
 
     //override method
     public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e)    {
@@ -25,10 +26,13 @@ grammar main;
 inici
 @init   {
             x = new Bytecode("Compilat");
-            Vector<Long> codeMain = new Vector<Long>(1000);
+            Vector<Long> codeMain = new Vector<Long>(10);
         }
         : blocDeclaracioConstants? blocDeclaracioTipus? blocAccionsFuncions? p=programa blocImplementacio?
         {
+            codeMain.addAll($p.codeMain);
+            codeMain.add(x.RETURN);
+            x.addMainCode(10L,10L,codeMain);
             x.write();
         };
 
@@ -74,15 +78,24 @@ parametres: parametre (TK_COMA parametre)*;
 parametre: (TK_PC_ENT | TK_PC_ENTSOR)? TK_IDENT TK_DOSPUNTS (tipusBasic | TK_IDENT);
 declaracioAccio : TK_PC_ACCIO TK_IDENT TK_LPAREN parametres? TK_RPAREN TK_SEMI;
 
-programa: TK_PC_PROGRAMA TK_IDENT blocDeclaracioVariables? sentencia* TK_PC_FPROGRAMA;
+programa returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); } : TK_PC_PROGRAMA TK_IDENT bdv=blocDeclaracioVariables? { $codeMain.addAll($bdv.codeMain); } sentencia* TK_PC_FPROGRAMA;
 
-blocDeclaracioVariables: TK_PC_VARIABLES variable* TK_PC_FVARIABLES;
-variable locals [String vars] : i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* TK_DOSPUNTS (tb=tipusBasic
+blocDeclaracioVariables returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); } : TK_PC_VARIABLES (v=variable { $codeMain.addAll($v.codeMain); } )* TK_PC_FVARIABLES;
+
+variable returns [Vector<Long> codeMain] locals [String vars]
+@init { $codeMain = new Vector<Long>(10); }: i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* TK_DOSPUNTS (tb=tipusBasic
                                 {
                                     String[] v = $vars.split(",");
                                     for(int i = 0; i < v.length; i++) {
                                         if(!TS.existeix(v[i])) {
-                                            TS.inserir(v[i], new Registre(v[i], $tb.t));
+                                            Registre r = new Registre(v[i], $tb.t, contVar++);
+                                            TS.inserir(v[i], r);
+
+                                            $codeMain.add(x.ICONST_3);
+                                            $codeMain.add(x.ISTORE_3);
+
                                         } else {
                                             error = true;
                                             System.out.println("Error al declarar una variable ja existent a la línia " + $i.line);
@@ -138,8 +151,6 @@ expressio2 returns [char t] : e1=expressio3 { $t = $e1.t; }(operadorsBooleans e2
                                         error = true;
                                         System.out.println("Conflicte de tipus amb operadors booleans");
                                     }
-
-
                                 }
                                 )*;
 operadorsBooleans : TK_OP_IGUALTAT | TK_OP_DESIGUALTAT | TK_MESPETIT | TK_MESPETIT_IGUAL | TK_MESGRAN | TK_MESGRAN_IGUAL;
