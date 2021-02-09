@@ -54,17 +54,23 @@ variableConstants : tb=tipusBasic i=TK_IDENT TK_ASSIGNACIO vtb=valorTipusBasic T
                                 TS.inserir($i.text, new Registre($i.text, $tb.t, x.addConstName($i.text, String.valueOf($tb.t), $vtb.v).intValue()));
                         }
                     };
-tipusBasic returns [char t]: TK_TB_BOOLEA { $t = 'Z'; }
-                                | TK_TB_REAL { $t = 'F'; }
-                                | TK_TB_ENTER { $t = 'I'; }
-                                | TK_TB_CAR { $t = 'C'; }
-                                | TK_TB_DATA { $t = 'D'; };
-valorTipusBasic returns [char t, String v]: tk=TK_BOOLEA { $t = 'Z'; $v = $tk.text; }
-                                    | TK_DATA { $t = 'D'; }
-                                    | ve=valorEnter {$t = $ve.t; $v = $ve.v; }
-                                    | tk=TK_REAL { $t = 'F'; $v = $tk.text; }
-                                    | tk=TK_CAR { $t = 'C'; $v = $tk.text; };
-valorEnter returns [char t, String v]: TK_ZERO { $t = 'I'; $v = "0"; } | tk=TK_ENTER { $t = 'I'; $v = $tk.text; };
+
+tipusBasic returns [char t] : TK_TB_BOOLEA { $t = 'Z'; }
+                            | TK_TB_REAL { $t = 'F'; }
+                            | TK_TB_ENTER { $t = 'I'; }
+                            | TK_TB_CAR { $t = 'C'; }
+                            | TK_TB_DATA { $t = 'D'; };
+
+valorTipusBasic returns [char t, String v, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: tk=TK_BOOLEA { $t = 'Z'; $v = $tk.text; $codeMain.add(x.BIPUSH); if($v == "cert") $codeMain.add(1L); else $codeMain.add(0L); }
+                                            | TK_DATA { $t = 'D'; }
+                                            | ve=valorEnter {$t = $ve.t; $v = $ve.v; $codeMain.addAll($ve.codeMain); }
+                                            | tk=TK_REAL { $t = 'F'; $v = $tk.text; $codeMain.add(x.BIPUSH); $codeMain.add((long)Float.floatToIntBits(Float.parseFloat($tk.text))); }
+                                            | tk=TK_CAR { $t = 'C'; $v = $tk.text; $codeMain.add(x.BIPUSH); int ascii = $tk.text.charAt(0); $codeMain.add((long)ascii); };
+
+valorEnter returns [char t, String v, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); } : TK_ZERO { $t = 'I'; $v = "0"; $codeMain.add(x.BIPUSH); $codeMain.add(0l); }
+                                            | tk=TK_ENTER { $t = 'I'; $v = $tk.text; $codeMain.add(x.BIPUSH); $codeMain.add(new Long($tk.text)); };
 
 blocDeclaracioTipus : TK_PC_TIPUS (tipus)* TK_PC_FTIPUS;
 tipus : TK_IDENT TK_DOSPUNTS (tipusBasic | tipusBasicVector | tipusBasicTupla) TK_SEMI;
@@ -93,8 +99,9 @@ variable returns [Vector<Long> codeMain] locals [String vars]
                                             Registre r = new Registre(v[i], $tb.t, contVar++);
                                             TS.inserir(v[i], r);
 
-                                            $codeMain.add(x.ICONST_3);
-                                            $codeMain.add(x.ISTORE_3);
+                                            $codeMain.add(x.ACONST_NULL);
+                                            $codeMain.add(x.ISTORE);
+                                            $codeMain.add(new Long(r.getAdreca()));
 
                                         } else {
                                             error = true;
@@ -154,74 +161,141 @@ expressio2 returns [char t] : e1=expressio3 { $t = $e1.t; }(operadorsBooleans e2
                                 }
                                 )*;
 operadorsBooleans : TK_OP_IGUALTAT | TK_OP_DESIGUALTAT | TK_MESPETIT | TK_MESPETIT_IGUAL | TK_MESGRAN | TK_MESGRAN_IGUAL;
-expressio3 returns [char t] locals [int p] : e1=expressio4 { $t = $e1.t; }
-                                                            ((i=TK_OP_PLUS { $p = 0; } | i=TK_OP_MENYS { $p = 1; }) e2=expressio4
-                                                            {
-                                                                if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
-                                                                    if($p == 0) {
-                                                                        if($t == 'F' || $e2.t == 'F')
-                                                                            $t = 'F';
-                                                                        else
-                                                                            $t = 'I';
-                                                                    }
-                                                                    else {
-                                                                        if($t == 'F' || $e2.t == 'F')
-                                                                            $t = 'F';
-                                                                        else
-                                                                            $t = 'I';
-                                                                    }
-                                                                }
-                                                                else {
-                                                                    error = true;
-                                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
-                                                                }
-                                                            }
-                                                            )*;
-expressio4 returns [char t] locals [int p] : e1=expressio5 { $t = $e1.t; }
+
+expressio3 returns [char t, Vector<Long> codeMain] locals [int p]
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t; }
+                                                ((i=TK_OP_PLUS { $p = 0; } | i=TK_OP_MENYS { $p = 1; }) e2=expressio4
+                                                {
+                                                    if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
+                                                        if($p == 0) {
+                                                            if($t == 'F' || $e2.t == 'F')
+                                                                $t = 'F';
+                                                            else
+                                                                $t = 'I';
+                                                        }
+                                                        else {
+                                                            if($t == 'F' || $e2.t == 'F')
+                                                                $t = 'F';
+                                                            else
+                                                                $t = 'I';
+                                                        }
+                                                    }
+                                                    else {
+                                                        error = true;
+                                                        System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                    }
+                                                }
+                                                )*;
+
+expressio4 returns [char t, Vector<Long> codeMain] locals [int p]
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio5 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }
                                             ((i=TK_STAR { $p = 0; } | i=TK_OP_DIVISIO_REAL { $p = 1; } | i=TK_OP_DIVISIO_ENTERA { $p = 2; } | i=TK_OP_MODUL { $p = 3; }) e2=expressio5
                                             {
                                                 if($p == 0 && ($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
-                                                    if($t == 'F' || $e2.t == 'F')
+                                                    if($t == 'F' || $e2.t == 'F') {
+                                                        if($t != 'F') {
+                                                            $codeMain.add(x.I2F);
+                                                        }
+                                                        $codeMain.addAll($e2.codeMain);
+                                                        if($e2.t != 'F') {
+                                                            $codeMain.add(x.I2F);
+                                                        }
+                                                        $codeMain.add(x.FMUL);
+
                                                         $t = 'F';
-                                                    else
+                                                    } else {
+                                                        $codeMain.addAll($e2.codeMain);
+                                                        $codeMain.add(x.IMUL);
+
                                                         $t = 'I';
+                                                    }
                                                 }
-                                                else if($p == 1 && ($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F'))
+                                                else if($p == 1 && ($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
+                                                    if($t != 'F') {
+                                                        $codeMain.add(x.I2F);
+                                                    }
+                                                    $codeMain.addAll($e2.codeMain);
+                                                    if($e2.t != 'F') {
+                                                        $codeMain.add(x.I2F);
+                                                    }
+                                                    $codeMain.add(x.FDIV);
+
                                                     $t = 'F';
-                                                else if($p == 2 && $t == 'I'&& $e2.t == 'I')
+                                                }
+                                                else if($p == 2 && $t == 'I'&& $e2.t == 'I') {
+                                                    $codeMain.addAll($e2.codeMain);
+                                                    $codeMain.add(x.IDIV);
+
                                                     $t = 'I';
-                                                else if($p == 3 && $t == 'I'&& $e2.t == 'I')
+                                                }
+                                                else if($p == 3 && $t == 'I'&& $e2.t == 'I') {
+                                                    $codeMain.addAll($e2.codeMain);
+                                                    $codeMain.add(x.IREM);
+
                                                     $t = 'I';
+                                                }
                                                 else {
                                                     error = true;
                                                     System.out.println("Conflicte de tipus a la línia " + $i.line);
                                                 }
                                             }
                                             )*;
-expressio5 returns [char t] locals [int p] : { $p = 0; }(i=TK_NEGACIO { $p = 1; } | i=TK_OP_MENYS_UNARI { $p = 2; })? e=expressio6
+
+expressio5 returns [char t, Vector<Long> codeMain] locals [int p]
+@init { $codeMain = new Vector<Long>(10); } : { $p = 0; }(i=TK_NEGACIO { $p = 1; } | i=TK_OP_MENYS_UNARI { $p = 2; })? e=expressio6
                             {
-                                if($p == 0)
+                                $codeMain.addAll($e.codeMain);
+
+                                if($p == 0) {
                                     $t = $e.t;
-                                else if($p == 1 && $e.t == 'Z')
+                                }
+                                else if($p == 1 && $e.t == 'Z') {
                                     $t = $e.t;
-                                else if($p == 2 && ($e.t == 'I' || $e.t == 'F'))
+
+                                    $codeMain.add(x.IFEQ);
+                                    Long salt = 8L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.add(x.BIPUSH);
+                                    $codeMain.add(0L);
+                                    $codeMain.add(x.GOTO);
+                                    salt=5L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.add(x.BIPUSH);
+                                    $codeMain.add(1L);
+                                }
+                                else if($p == 2 && ($e.t == 'I' || $e.t == 'F')) {
                                     $t = $e.t;
+                                    if($e.t == 'I') {
+                                        $codeMain.add(x.INEG);
+                                    } else {
+                                        $codeMain.add(x.FNEG);
+                                    }
+                                }
                                 else {
                                     error = true;
                                     System.out.println("Conflicte de tipus a la línia " + $i.line);
                                 }
                             };
-expressio6 returns [char t] : v=valor { $t = $v.t; } | TK_LPAREN e=expressio { $t = $e.t; } TK_RPAREN;
-valor returns [char t, String v] : vtb=valorTipusBasic { $t = $vtb.t; } | TK_STRING { $t = 'S'; } | i=TK_IDENT
-                        {
-                            if(TS.existeix($i.text))
-                                $t = TS.obtenir($i.text).getTipus();
-                            else {
-                                error = true;
-                                System.out.println("No existeix la variable a la línia " + $i.line);
-                            }
-                        }
-                        | accesTupla | accesVector | cridaFuncio;
+
+expressio6 returns [char t, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); } : v=valor { $t = $v.t; $codeMain.addAll($v.codeMain); } | TK_LPAREN e=expressio { $t = $e.t; $codeMain.addAll($e.codeMain); } TK_RPAREN;
+
+valor returns [char t, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); } : vtb=valorTipusBasic { $t = $vtb.t; $codeMain.addAll($vtb.codeMain); } | TK_STRING { $t = 'S'; } | i=TK_IDENT
+                                                {
+                                                    if(TS.existeix($i.text)) {
+                                                        Registre r = TS.obtenir($i.text);
+                                                        $t = r.getTipus();
+                                                        $codeMain.add(x.ILOAD);
+                                                        $codeMain.add(new Long(r.getAdreca()));
+                                                    } else {
+                                                        error = true;
+                                                        System.out.println("No existeix la variable a la línia " + $i.line);
+                                                    }
+                                                }
+                                                | accesTupla | accesVector | cridaFuncio;
 accesTupla : TK_IDENT TK_PUNT TK_IDENT;
 accesVector : TK_IDENT TK_OVECTOR expressio TK_TVECTOR;
 cridaFuncio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN;

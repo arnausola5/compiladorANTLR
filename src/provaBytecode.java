@@ -60,6 +60,9 @@ public static void main(String[] args) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
+	int a = "a".charAt(0);
+
+	System.out.println(a);
 
 
 	// Vector de Long per col.locar el codi del Main
