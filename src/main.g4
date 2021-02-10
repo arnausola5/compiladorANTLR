@@ -61,16 +61,37 @@ tipusBasic returns [char t] : TK_TB_BOOLEA { $t = 'Z'; }
                             | TK_TB_CAR { $t = 'C'; }
                             | TK_TB_DATA { $t = 'D'; };
 
-valorTipusBasic returns [char t, String v, Vector<Long> codeMain]
+valorTipusBasic returns [char t, String v, Vector<Long> codeMain] locals [Long adr]
 @init { $codeMain = new Vector<Long>(10); }: tk=TK_BOOLEA { $t = 'Z'; $v = $tk.text; $codeMain.add(x.BIPUSH); if($v == "cert") $codeMain.add(1L); else $codeMain.add(0L); }
                                             | TK_DATA { $t = 'D'; }
                                             | ve=valorEnter {$t = $ve.t; $v = $ve.v; $codeMain.addAll($ve.codeMain); }
-                                            | tk=TK_REAL { $t = 'F'; $v = $tk.text; $codeMain.add(x.BIPUSH); $codeMain.add((long)Float.floatToIntBits(Float.parseFloat($tk.text))); }
+                                            | tk=TK_REAL
+                                                {
+                                                    $t = 'F'; $v = $tk.text;
+                                                    $adr = x.addConstant("F",$tk.text);
+                                                    $codeMain.add(x.LDC_W);
+                                                    $codeMain.add(x.nByte($adr,2));
+                                                    $codeMain.add(x.nByte($adr,1));
+                                                }
                                             | tk=TK_CAR { $t = 'C'; $v = $tk.text; $codeMain.add(x.BIPUSH); int ascii = $tk.text.charAt(0); $codeMain.add((long)ascii); };
 
-valorEnter returns [char t, String v, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : TK_ZERO { $t = 'I'; $v = "0"; $codeMain.add(x.BIPUSH); $codeMain.add(0l); }
-                                            | tk=TK_ENTER { $t = 'I'; $v = $tk.text; $codeMain.add(x.BIPUSH); $codeMain.add(new Long($tk.text)); };
+valorEnter returns [char t, String v, Vector<Long> codeMain] locals [Long adr]
+@init { $codeMain = new Vector<Long>(10); } : TK_ZERO
+                                            {
+                                                $t = 'I'; $v = "0";
+                                                $adr = x.addConstant("I","0");
+                                                $codeMain.add(x.LDC_W);
+                                                $codeMain.add(x.nByte($adr,2));
+                                                $codeMain.add(x.nByte($adr,1));
+                                            }
+                                            | tk=TK_ENTER
+                                            {
+                                                $t = 'I'; $v = $tk.text;
+                                                $adr = x.addConstant("I",$tk.text);
+                                                $codeMain.add(x.LDC_W);
+                                                $codeMain.add(x.nByte($adr,2));
+                                                $codeMain.add(x.nByte($adr,1));
+                                            };
 
 blocDeclaracioTipus : TK_PC_TIPUS (tipus)* TK_PC_FTIPUS;
 tipus : TK_IDENT TK_DOSPUNTS (tipusBasic | tipusBasicVector | tipusBasicTupla) TK_SEMI;
@@ -130,8 +151,10 @@ ifThenElse returns [char t] : c=expressio1 i=TK_INTERROGANT
                         $t = $ec.t;
                 }
             };
-expressio returns [char t] : ite=ifThenElse { $t = $ite.t; } | e=expressio1 { $t = $e.t; };
-expressio1 returns [char t] locals [int p] : e1=expressio2 { $t = $e1.t; }
+expressio returns [char t, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: ite=ifThenElse { $t = $ite.t; } | e=expressio1 { $t = $e.t; $codeMain.addAll($e.codeMain); };
+expressio1 returns [char t, Vector<Long> codeMain] locals [int p]
+@init { $codeMain = new Vector<Long>(10); }: e1=expressio2 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }
                                             ((i=TK_AND { $p = 0; }| i=TK_OR { $p = 1; }) e2=expressio2
                                             {
                                                 if($t == 'Z' && $e2.t == 'Z') {
@@ -146,38 +169,244 @@ expressio1 returns [char t] locals [int p] : e1=expressio2 { $t = $e1.t; }
                                                 }
                                             }
                                             )*;
-expressio2 returns [char t] : e1=expressio3 { $t = $e1.t; }(operadorsBooleans e2=expressio3
+expressio2 returns [char t, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio3 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }(op=operadorsBooleans e2=expressio3
                                 {
-                                    if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F'))
+                                    if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')){
+                                        if ($t == 'F' || $e2.t == 'F'){
+                                            if ($t != 'F'){
+                                                $codeMain.add(x.I2F);
+                                            }
+                                            $codeMain.addAll($e2.codeMain);
+                                            if ($e2.t != 'F'){
+                                                $codeMain.add(x.I2F);
+                                            }
+                                            $codeMain.add(x.FCMPG);
+                                            if ($op.o == 0){
+                                                $codeMain.add(x.IFEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 1){
+                                                $codeMain.add(x.IFEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                            }
+                                            else if ($op.o == 2){
+                                                $codeMain.add(x.IFLT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 3){
+                                                $codeMain.add(x.IFLE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 4){
+                                                $codeMain.add(x.IFGT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 5){
+                                                $codeMain.add(x.IFGE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                        }
+                                        else {
+                                            if ($op.o == 0){
+                                                $codeMain.add(x.IF_ICMPEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 1){
+                                                $codeMain.add(x.IF_ICMPEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                            }
+                                            else if ($op.o == 2){
+                                                $codeMain.add(x.IF_ICMPLT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 3){
+                                                $codeMain.add(x.IF_ICMPLE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 4){
+                                                $codeMain.add(x.IF_ICMPGT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($op.o == 5){
+                                                $codeMain.add(x.IF_ICMPGE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                        }
                                         $t = 'Z';
-                                    else if($t == 'Z' && $e2.t == 'Z')
+                                    }
+                                    else if($t == 'Z' && $e2.t == 'Z'){
                                         $t = 'Z';
-                                    else if($t == 'C' && $e2.t == 'C')
+                                    }
+                                    else if($t == 'C' && $e2.t == 'C'){
                                         $t = 'Z';
+                                    }
                                     else {
                                         error = true;
                                         System.out.println("Conflicte de tipus amb operadors booleans");
                                     }
                                 }
                                 )*;
-operadorsBooleans : TK_OP_IGUALTAT | TK_OP_DESIGUALTAT | TK_MESPETIT | TK_MESPETIT_IGUAL | TK_MESGRAN | TK_MESGRAN_IGUAL;
+operadorsBooleans returns [int o]: TK_OP_IGUALTAT {$o = 0;} | TK_OP_DESIGUALTAT {$o = 1;}| TK_MESPETIT {$o = 2;}| TK_MESPETIT_IGUAL {$o = 3;}| TK_MESGRAN {$o = 4;} | TK_MESGRAN_IGUAL {$o = 5;};
 
 expressio3 returns [char t, Vector<Long> codeMain] locals [int p]
-@init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t; }
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }
                                                 ((i=TK_OP_PLUS { $p = 0; } | i=TK_OP_MENYS { $p = 1; }) e2=expressio4
                                                 {
                                                     if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
                                                         if($p == 0) {
-                                                            if($t == 'F' || $e2.t == 'F')
+                                                            if($t == 'F' || $e2.t == 'F'){
+                                                                if($t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.addAll($e2.codeMain);
+                                                                if ($e2.t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.add(x.FADD);
                                                                 $t = 'F';
-                                                            else
+                                                            }
+                                                            else{
+                                                                $codeMain.add(x.IADD);
                                                                 $t = 'I';
+                                                            }
                                                         }
                                                         else {
-                                                            if($t == 'F' || $e2.t == 'F')
+                                                            if($t == 'F' || $e2.t == 'F'){
+                                                                if($t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.addAll($e2.codeMain);
+                                                                if ($e2.t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.add(x.FSUB);
                                                                 $t = 'F';
-                                                            else
+                                                            }
+                                                            else{
+                                                                $codeMain.add(x.ISUB);
                                                                 $t = 'I';
+                                                            }
                                                         }
                                                     }
                                                     else {
@@ -280,7 +509,7 @@ expressio5 returns [char t, Vector<Long> codeMain] locals [int p]
                             };
 
 expressio6 returns [char t, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : v=valor { $t = $v.t; $codeMain.addAll($v.codeMain); } | TK_LPAREN e=expressio { $t = $e.t; $codeMain.addAll($e.codeMain); } TK_RPAREN;
+@init { $codeMain = new Vector<Long>(10); } : v=valor { $t = $v.t; $codeMain.addAll($v.codeMain); } | TK_LPAREN e=expressio { $t = $e.t; } TK_RPAREN;
 
 valor returns [char t, Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : vtb=valorTipusBasic { $t = $vtb.t; $codeMain.addAll($vtb.codeMain); } | TK_STRING { $t = 'S'; } | i=TK_IDENT
