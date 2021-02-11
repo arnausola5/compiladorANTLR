@@ -12,7 +12,7 @@ grammar main;
     SymTable<Registre> TS = new SymTable<Registre>(1000);
     boolean error = false;
     Bytecode x;
-    int contVar = 0;
+    int contVar = 1;
 
     //override method
     public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e)    {
@@ -34,6 +34,7 @@ inici
             codeMain.add(x.RETURN);
             x.addMainCode(10L,10L,codeMain);
             x.write();
+            x.show();
         };
 
 blocDeclaracioConstants : TK_PC_CONSTANTS (vc=variableConstants)* TK_PC_FCONSTANTS;
@@ -106,7 +107,7 @@ parametre: (TK_PC_ENT | TK_PC_ENTSOR)? TK_IDENT TK_DOSPUNTS (tipusBasic | TK_IDE
 declaracioAccio : TK_PC_ACCIO TK_IDENT TK_LPAREN parametres? TK_RPAREN TK_SEMI;
 
 programa returns [Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : TK_PC_PROGRAMA TK_IDENT bdv=blocDeclaracioVariables? { $codeMain.addAll($bdv.codeMain); } sentencia* TK_PC_FPROGRAMA;
+@init { $codeMain = new Vector<Long>(10); } : TK_PC_PROGRAMA TK_IDENT bdv=blocDeclaracioVariables? { $codeMain.addAll($bdv.codeMain); } (s=sentencia { $codeMain.addAll($s.codeMain); } )* TK_PC_FPROGRAMA;
 
 blocDeclaracioVariables returns [Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : TK_PC_VARIABLES (v=variable { $codeMain.addAll($v.codeMain); } )* TK_PC_FVARIABLES;
@@ -117,13 +118,8 @@ variable returns [Vector<Long> codeMain] locals [String vars]
                                     String[] v = $vars.split(",");
                                     for(int i = 0; i < v.length; i++) {
                                         if(!TS.existeix(v[i])) {
-                                            Registre r = new Registre(v[i], $tb.t, contVar++);
+                                            Registre r = new Registre(v[i], $tb.t);
                                             TS.inserir(v[i], r);
-
-                                            $codeMain.add(x.ACONST_NULL);
-                                            $codeMain.add(x.ISTORE);
-                                            $codeMain.add(new Long(r.getAdreca()));
-
                                         } else {
                                             error = true;
                                             System.out.println("Error al declarar una variable ja existent a la línia " + $i.line);
@@ -132,11 +128,14 @@ variable returns [Vector<Long> codeMain] locals [String vars]
                                 }
                                 | TK_IDENT) TK_SEMI;
 
-ifThenElse returns [char t] : c=expressio1 i=TK_INTERROGANT
+ifThenElse returns [char t, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: c=expressio1 i=TK_INTERROGANT
             {
                 if($c.t != 'Z') {
                     error = true;
                     System.out.println("Error al assignar una condició no booleana a la línia " + $i.line);
+                } else {
+                    $codeMain.addAll($c.codeMain);
                 }
             }
             ec=expressio1 TK_DOSPUNTS ef=expressio1
@@ -145,23 +144,57 @@ ifThenElse returns [char t] : c=expressio1 i=TK_INTERROGANT
                     error = true;
                     System.out.println("Error de tipus a expressióCert i expressióFals a la línia " + $i.line);
                 } else {
+
+                    $codeMain.add(x.IF_ICMPGT);
+                    Long salt=7L;
+                    $codeMain.add(x.nByte(salt,2));
+                    $codeMain.add(x.nByte(salt,1));
+                    $codeMain.addAll($ef.codeMain);
+                    $codeMain.add(x.GOTO);
+                    salt=4L;
+                    $codeMain.add(x.nByte(salt,2));
+                    $codeMain.add(x.nByte(salt,1));
+                    $codeMain.addAll($ec.codeMain);
+
                     if($ec.t != $ef.t)
                         $t = 'F';
                     else
                         $t = $ec.t;
                 }
             };
+
 expressio returns [char t, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); }: ite=ifThenElse { $t = $ite.t; } | e=expressio1 { $t = $e.t; $codeMain.addAll($e.codeMain); };
+@init { $codeMain = new Vector<Long>(10); }: ite=ifThenElse { $t = $ite.t; $codeMain.addAll($ite.codeMain); } | e=expressio1 { $t = $e.t; $codeMain.addAll($e.codeMain); };
+
 expressio1 returns [char t, Vector<Long> codeMain] locals [int p]
 @init { $codeMain = new Vector<Long>(10); }: e1=expressio2 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }
                                             ((i=TK_AND { $p = 0; }| i=TK_OR { $p = 1; }) e2=expressio2
                                             {
                                                 if($t == 'Z' && $e2.t == 'Z') {
-                                                    if($p == 0)
+                                                    $codeMain.addAll($e2.codeMain);
+
+                                                    if($p == 0) {
+                                                        $codeMain.add(x.IADD);
+
+                                                        $codeMain.add(x.IF_ICMPGT);
+                                                        Long salt=8L;
+                                                        $codeMain.add(x.nByte(salt,2));
+                                                        $codeMain.add(x.nByte(salt,1));
+                                                        $codeMain.add(x.BIPUSH);
+                                                        $codeMain.add(0L);
+                                                        $codeMain.add(x.GOTO);
+                                                        salt=5L;
+                                                        $codeMain.add(x.nByte(salt,2));
+                                                        $codeMain.add(x.nByte(salt,1));
+                                                        $codeMain.add(x.BIPUSH);
+                                                        $codeMain.add(1L);
+
                                                         $t = 'Z';
-                                                    else
+                                                    } else {
+                                                        $codeMain.add(x.IMUL);
+
                                                         $t = 'Z';
+                                                    }
                                                 }
                                                 else {
                                                     error = true;
@@ -169,10 +202,11 @@ expressio1 returns [char t, Vector<Long> codeMain] locals [int p]
                                                 }
                                             }
                                             )*;
+
 expressio2 returns [char t, Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : e1=expressio3 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }(op=operadorsBooleans e2=expressio3
                                 {
-                                    if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')){
+                                    if((($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) || ($t == 'C' && $e2.t == 'C')) {
                                         if ($t == 'F' || $e2.t == 'F'){
                                             if ($t != 'F'){
                                                 $codeMain.add(x.I2F);
@@ -267,7 +301,8 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(1L);
                                             }
                                         }
-                                        else {
+                                        else if (($t == 'I' && $e2.t == 'I') || ($t == 'C' && $e2.t == 'C')){
+                                            $codeMain.addAll($e2.codeMain);
                                             if ($op.o == 0){
                                                 $codeMain.add(x.IF_ICMPEQ);
                                                 Long salt=8L;
@@ -355,11 +390,39 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                         }
                                         $t = 'Z';
                                     }
-                                    else if($t == 'Z' && $e2.t == 'Z'){
+                                    else if($t == 'Z' && $e2.t == 'Z' && ($op.o == 0 || $op.o == 1)){
+                                        $codeMain.addAll($e2.codeMain);
+                                        if ($op.o == 0){
+                                            $codeMain.add(x.IF_ICMPEQ);
+                                            Long salt=8L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(0L);
+                                            $codeMain.add(x.GOTO);
+                                            salt=5L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(1L);
+                                        }
+                                        else if ($op.o == 1){
+                                            $codeMain.add(x.IF_ICMPEQ);
+                                            Long salt=8L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(1L);
+                                            $codeMain.add(x.GOTO);
+                                            salt=5L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(0L);
+                                        }
+
                                         $t = 'Z';
-                                    }
-                                    else if($t == 'C' && $e2.t == 'C'){
-                                        $t = 'Z';
+
                                     }
                                     else {
                                         error = true;
@@ -367,10 +430,12 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                     }
                                 }
                                 )*;
+
+
 operadorsBooleans returns [int o]: TK_OP_IGUALTAT {$o = 0;} | TK_OP_DESIGUALTAT {$o = 1;}| TK_MESPETIT {$o = 2;}| TK_MESPETIT_IGUAL {$o = 3;}| TK_MESGRAN {$o = 4;} | TK_MESGRAN_IGUAL {$o = 5;};
 
 expressio3 returns [char t, Vector<Long> codeMain] locals [int p]
-@init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t;  $codeMain.addAll($e1.codeMain); }
                                                 ((i=TK_OP_PLUS { $p = 0; } | i=TK_OP_MENYS { $p = 1; }) e2=expressio4
                                                 {
                                                     if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
@@ -517,7 +582,11 @@ valor returns [char t, Vector<Long> codeMain]
                                                     if(TS.existeix($i.text)) {
                                                         Registre r = TS.obtenir($i.text);
                                                         $t = r.getTipus();
-                                                        $codeMain.add(x.ILOAD);
+                                                        if($t == 'I' || $t == 'C' || $t == 'Z') {
+                                                            $codeMain.add(x.ILOAD);
+                                                        } else if($t == 'F') {
+                                                            $codeMain.add(x.FLOAD);
+                                                        }
                                                         $codeMain.add(new Long(r.getAdreca()));
                                                     } else {
                                                         error = true;
@@ -525,19 +594,42 @@ valor returns [char t, Vector<Long> codeMain]
                                                     }
                                                 }
                                                 | accesTupla | accesVector | cridaFuncio;
+
 accesTupla : TK_IDENT TK_PUNT TK_IDENT;
 accesVector : TK_IDENT TK_OVECTOR expressio TK_TVECTOR;
 cridaFuncio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN;
 
-sentencia : (asignacio | condicional | per | mentre | cridaAccio | llegir | escriure | escriureln);
+sentencia returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: (a=asignacio { $codeMain.addAll($a.codeMain); } | condicional | per | mentre | cridaAccio | llegir | escriure | escriureln);
 
-asignacio : (i=TK_IDENT | accesTupla | accesVector) TK_ASSIGNACIO e=expressio TK_SEMI
+asignacio returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: (i=TK_IDENT | accesTupla | accesVector) TK_ASSIGNACIO e=expressio TK_SEMI
                             {
                                 if(!(TS.existeix($i.text) && TS.obtenir($i.text).tipus == $e.t)) {
                                     error = true;
                                     System.out.println("Error al assignar un valor a una variable a la línia " + $i.line);
+                                } else {
+                                    Registre r = TS.obtenir($i.text);
+
+                                    if(r.getAdreca() == 0) {
+                                        r.putAdreca(contVar);
+                                        contVar++;
+                                    }
+
+                                    char t = r.getTipus();
+
+                                    $codeMain.addAll($e.codeMain);
+
+                                    if(t == 'I' || t == 'C' || t == 'Z') {
+                                        $codeMain.add(x.ISTORE);
+                                    } else if(t == 'F') {
+                                        $codeMain.add(x.FSTORE);
+                                    }
+
+                                    $codeMain.add(new Long(r.getAdreca()));
                                 }
                             };
+
 condicional : i=TK_PC_SI e=expressio TK_PC_LLAVORS sentencia* (TK_PC_ALTRAMENT sentencia*)? TK_PC_FSI
                             {
                                 if($e.t != 'Z') {

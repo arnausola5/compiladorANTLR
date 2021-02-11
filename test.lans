@@ -6,4 +6,6 @@ programa xupala
 variables
 a : enter;
 fvariables
+a := 5;
+a := 100000;
 fprograma
