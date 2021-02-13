@@ -28,22 +28,9 @@ import java.util.*;
 class provaBytecode {
 public static void main(String[] args) {
 
-	char var1 = (char)101;
-	System.out.println(var1);
 
-	String text = "348E-3";
-	int p = text.indexOf("E");
-	int num = Integer.parseInt(text.substring(p+2));
-	float valor = Float.parseFloat(text.substring(0, p));
-
-	System.out.println(num);
-	System.out.println(Math.pow(10, 3));
-	System.out.println(valor);
-
-	float r = valor / (float)Math.pow(10,3);
-
-	System.out.println(r);
-
+	String a = "hola";
+	System.out.println(a.substring(1,a.length()-1));
 
 	Bytecode x=new Bytecode("Exemple");
 
@@ -77,25 +64,10 @@ public static void main(String[] args) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	//int a = "a".charAt(0);
-	//System.out.println(a);
-
 
 
 	// Vector de Long per col.locar el codi del Main
   	Vector<Long> codeMain=new Vector<Long>(100);
-
-
-	// Afegim el real a la ConstantPoll
-	Long f = x.addConstant("F","0.25");
-	codeMain.add(x.LDC_W);
-	codeMain.add(x.nByte(f,2)); // Afegim la seva adreça
-	codeMain.add(x.nByte(f,1));
-
-
-	codeMain.add(x.INVOKESTATIC);
-	codeMain.add(x.nByte(x.mPutFloat,2));
-	codeMain.add(x.nByte(x.mPutFloat,1));
 
    	// Imprimim un missatge per pantalla
     codeMain.add(x.LDC_W);
@@ -104,10 +76,8 @@ public static void main(String[] args) {
     codeMain.add(x.INVOKESTATIC);
 	codeMain.add(x.nByte(x.mPutLnString,2));
 	codeMain.add(x.nByte(x.mPutLnString,1));
+ 
 
-	codeMain.add(x.BIPUSH);
-	codeMain.add(8L);
-	codeMain.add(x.ISTORE_3);
    	// Fem la crida a la accio spin
     codeMain.add(x.INVOKESTATIC);
 	codeMain.add(x.nByte(idSpin,2));
@@ -121,7 +91,7 @@ public static void main(String[] args) {
     	codeMain.add(x.ICONST_5);
     	codeMain.add(x.ISTORE_2);
     	codeMain.add(x.ILOAD_1);
-    	codeMain.add(x.ILOAD_3);
+    	codeMain.add(x.ILOAD_2);
     	codeMain.add(x.INVOKESTATIC);
 	codeMain.add(x.nByte(idA2g,2));
 	codeMain.add(x.nByte(idA2g,1));

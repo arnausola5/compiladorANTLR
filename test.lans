@@ -1,13 +1,8 @@
-programa a
-
+programa xupala
 variables
-r 	: real;
+i : enter;
 fvariables
-
-r := 3.4;
-
-llegir(r);
-escriureln(r);
-
-
+per i de 0 fins ~3 fer
+escriure(i);
+fper
 fprograma

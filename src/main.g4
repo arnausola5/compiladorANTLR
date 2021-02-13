@@ -36,22 +36,18 @@ inici
             codeMain.add(x.RETURN);
             x.addMainCode(10L,10L,codeMain);
             x.write();
-            x.show();
         };
 
 blocDeclaracioConstants : TK_PC_CONSTANTS (vc=variableConstants)* TK_PC_FCONSTANTS;
 
-variableConstants : tb=tipusBasic i=TK_IDENT TK_ASSIGNACIO vtb=valorTipusBasic TK_SEMI
+variableConstants : tb=tipusBasic i=TK_IDENT a=TK_ASSIGNACIO vtb=valorTipusBasic TK_SEMI
                     {
                         if($tb.t != $vtb.t) {
-                            error = true;
-                            System.out.println("Error al assignar constant a la línia " + $i.line);
-                            // notifyErrorListeners(variableConstants, "El tipus de tipusBasic i valorTipusBasic
+                            notifyErrorListeners($a, "El tipus de declaració i del valor no coincideix", null);
                         }
                         else {
                             if(TS.existeix($i.text)) {
-                                error = true;
-                                System.out.println("La constant ja existeix, línia " + $i.line);
+                                notifyErrorListeners($a, "La constant ja ha estat declarada", null);
                             }
                             else
                                 TS.inserir($i.text, new Registre($i.text, $tb.t, x.addConstName($i.text, String.valueOf($tb.t), $vtb.v).intValue()));
@@ -109,22 +105,22 @@ valorTipusBasic returns [char t, String v, Vector<Long> codeMain]
                                                 $codeMain.add(x.I2C);
                                                 };
 
-valorEnter returns [char t, String v, Vector<Long> codeMain] locals [Long adr]
+valorEnter returns [char t, String v, Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : TK_ZERO
                                             {
                                                 $t = 'I'; $v = "0";
-                                                $adr = x.addConstant("I","0");
+                                                Long adr = x.addConstant("I","0");
                                                 $codeMain.add(x.LDC_W);
-                                                $codeMain.add(x.nByte($adr,2));
-                                                $codeMain.add(x.nByte($adr,1));
+                                                $codeMain.add(x.nByte(adr,2));
+                                                $codeMain.add(x.nByte(adr,1));
                                             }
                                             | tk=TK_ENTER
                                             {
                                                 $t = 'I'; $v = $tk.text;
-                                                $adr = x.addConstant("I",$tk.text);
+                                                Long adr = x.addConstant("I",$tk.text);
                                                 $codeMain.add(x.LDC_W);
-                                                $codeMain.add(x.nByte($adr,2));
-                                                $codeMain.add(x.nByte($adr,1));
+                                                $codeMain.add(x.nByte(adr,2));
+                                                $codeMain.add(x.nByte(adr,1));
                                             };
 
 blocDeclaracioTipus : TK_PC_TIPUS (tipus)* TK_PC_FTIPUS;
@@ -146,7 +142,7 @@ blocDeclaracioVariables returns [Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : TK_PC_VARIABLES (v=variable { $codeMain.addAll($v.codeMain); } )* TK_PC_FVARIABLES;
 
 variable returns [Vector<Long> codeMain] locals [String vars]
-@init { $codeMain = new Vector<Long>(10); }: i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* TK_DOSPUNTS (tb=tipusBasic
+@init { $codeMain = new Vector<Long>(10); }: i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* dp=TK_DOSPUNTS (tb=tipusBasic
                                 {
                                     String[] v = $vars.split(",");
                                     for(int i = 0; i < v.length; i++) {
@@ -154,8 +150,7 @@ variable returns [Vector<Long> codeMain] locals [String vars]
                                             Registre r = new Registre(v[i], $tb.t);
                                             TS.inserir(v[i], r);
                                         } else {
-                                            error = true;
-                                            System.out.println("Error al declarar una variable ja existent a la línia " + $i.line);
+                                            notifyErrorListeners($dp, "La variable ja ha estat declarada", null);
                                         }
                                     }
                                 }
@@ -165,8 +160,7 @@ ifThenElse returns [char t, Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); }: c=expressio1 i=TK_INTERROGANT
             {
                 if($c.t != 'Z') {
-                    error = true;
-                    System.out.println("Error al assignar una condició no booleana a la línia " + $i.line);
+                    notifyErrorListeners($i, "La condició " + $c.text + " ha de ser booleana", null);
                 } else {
                     $codeMain.addAll($c.codeMain);
                 }
@@ -174,20 +168,25 @@ ifThenElse returns [char t, Vector<Long> codeMain]
             ec=expressio1 TK_DOSPUNTS ef=expressio1
             {
                 if($ec.t != $ef.t && !(($ec.t == 'F' && $ef.t == 'I') || ($ec.t == 'I' && $ef.t == 'F'))) {
-                    error = true;
-                    System.out.println("Error de tipus a expressióCert i expressióFals a la línia " + $i.line);
+                    notifyErrorListeners($i, "Els tipus " + $ec.t + " i " + $ef.t + " no són vàlids", null);
                 } else {
+                    if($ec.t == 'F' || $ef.t == 'F') {
+                        if($ec.t == 'I')
+                            $ec.codeMain.add(x.I2F);
+                        if($ef.t == 'I')
+                            $ef.codeMain.add(x.I2F);
+                    }
 
-                    $codeMain.add(x.IF_ICMPGT);
-                    Long salt=7L;
-                    $codeMain.add(x.nByte(salt,2));
-                    $codeMain.add(x.nByte(salt,1));
-                    $codeMain.addAll($ef.codeMain);
-                    $codeMain.add(x.GOTO);
-                    salt=4L;
+                    $codeMain.add(x.IFEQ);
+                    Long salt=6L+$ec.codeMain.size();
                     $codeMain.add(x.nByte(salt,2));
                     $codeMain.add(x.nByte(salt,1));
                     $codeMain.addAll($ec.codeMain);
+                    $codeMain.add(x.GOTO);
+                    salt=3L+$ef.codeMain.size();
+                    $codeMain.add(x.nByte(salt,2));
+                    $codeMain.add(x.nByte(salt,1));
+                    $codeMain.addAll($ef.codeMain);
 
                     if($ec.t != $ef.t)
                         $t = 'F';
@@ -197,7 +196,7 @@ ifThenElse returns [char t, Vector<Long> codeMain]
             };
 
 expressio returns [char t, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); }: ite=ifThenElse { $t = $ite.t; $codeMain.addAll($ite.codeMain); } | e=expressio1 { $t = $e.t; $codeMain.addAll($e.codeMain); System.out.println($e.t); };
+@init { $codeMain = new Vector<Long>(10); }: ite=ifThenElse { $t = $ite.t; $codeMain.addAll($ite.codeMain); } | e=expressio1 { $t = $e.t; $codeMain.addAll($e.codeMain); };
 
 expressio1 returns [char t, Vector<Long> codeMain] locals [int p]
 @init { $codeMain = new Vector<Long>(10); }: e1=expressio2 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }
@@ -218,13 +217,13 @@ expressio1 returns [char t, Vector<Long> codeMain] locals [int p]
                                                 }
                                                 else {
                                                     error = true;
-                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                    notifyErrorListeners($i, "Els tipus " + $e1.t + " o " + $e2.t + " no són booleans", null);
                                                 }
                                             }
                                             )*;
 
-expressio2 returns [char t, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : e1=expressio3 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }(op=operadorsBooleans e2=expressio3
+expressio2 returns [char t, Vector<Long> codeMain] locals [int o]
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio3 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }((op=TK_OP_IGUALTAT {$o = 0;} | op=TK_OP_DESIGUALTAT {$o = 1;}| op=TK_MESPETIT {$o = 2;}| op=TK_MESPETIT_IGUAL {$o = 3;}| op=TK_MESGRAN {$o = 4;} | op=TK_MESGRAN_IGUAL {$o = 5;}) e2=expressio3
                                 {
                                     if((($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) || ($t == 'C' && $e2.t == 'C')) {
                                         if ($t == 'F' || $e2.t == 'F'){
@@ -236,7 +235,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.I2F);
                                             }
                                             $codeMain.add(x.FCMPG);
-                                            if ($op.o == 0){
+                                            if ($o == 0){
                                                 $codeMain.add(x.IFEQ);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -250,7 +249,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 1){
+                                            else if ($o == 1){
                                                 $codeMain.add(x.IFEQ);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -264,7 +263,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(0L);
                                             }
-                                            else if ($op.o == 2){
+                                            else if ($o == 2){
                                                 $codeMain.add(x.IFLT);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -278,7 +277,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 3){
+                                            else if ($o == 3){
                                                 $codeMain.add(x.IFLE);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -292,7 +291,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 4){
+                                            else if ($o == 4){
                                                 $codeMain.add(x.IFGT);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -306,7 +305,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 5){
+                                            else if ($o == 5){
                                                 $codeMain.add(x.IFGE);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -323,7 +322,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                         }
                                         else if (($t == 'I' && $e2.t == 'I') || ($t == 'C' && $e2.t == 'C')){
                                             $codeMain.addAll($e2.codeMain);
-                                            if ($op.o == 0){
+                                            if ($o == 0){
                                                 $codeMain.add(x.IF_ICMPEQ);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -337,7 +336,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 1){
+                                            else if ($o == 1){
                                                 $codeMain.add(x.IF_ICMPEQ);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -351,7 +350,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(0L);
                                             }
-                                            else if ($op.o == 2){
+                                            else if ($o == 2){
                                                 $codeMain.add(x.IF_ICMPLT);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -365,7 +364,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 3){
+                                            else if ($o == 3){
                                                 $codeMain.add(x.IF_ICMPLE);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -379,7 +378,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 4){
+                                            else if ($o == 4){
                                                 $codeMain.add(x.IF_ICMPGT);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -393,7 +392,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                                 $codeMain.add(x.BIPUSH);
                                                 $codeMain.add(1L);
                                             }
-                                            else if ($op.o == 5){
+                                            else if ($o == 5){
                                                 $codeMain.add(x.IF_ICMPGE);
                                                 Long salt=8L;
                                                 $codeMain.add(x.nByte(salt,2));
@@ -410,9 +409,9 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                         }
                                         $t = 'Z';
                                     }
-                                    else if($t == 'Z' && $e2.t == 'Z' && ($op.o == 0 || $op.o == 1)){
+                                    else if($t == 'Z' && $e2.t == 'Z' && ($o == 0 || $o == 1)){
                                         $codeMain.addAll($e2.codeMain);
-                                        if ($op.o == 0){
+                                        if ($o == 0){
                                             $codeMain.add(x.IF_ICMPEQ);
                                             Long salt=8L;
                                             $codeMain.add(x.nByte(salt,2));
@@ -426,7 +425,7 @@ expressio2 returns [char t, Vector<Long> codeMain]
                                             $codeMain.add(x.BIPUSH);
                                             $codeMain.add(1L);
                                         }
-                                        else if ($op.o == 1){
+                                        else if ($o == 1){
                                             $codeMain.add(x.IF_ICMPEQ);
                                             Long salt=8L;
                                             $codeMain.add(x.nByte(salt,2));
@@ -445,14 +444,10 @@ expressio2 returns [char t, Vector<Long> codeMain]
 
                                     }
                                     else {
-                                        error = true;
-                                        System.out.println("Conflicte de tipus amb operadors booleans");
+                                        notifyErrorListeners($op, $e1.t + " i " + $e2.t + " no es poden comparar", null);
                                     }
                                 }
                                 )*;
-
-
-operadorsBooleans returns [int o]: TK_OP_IGUALTAT {$o = 0;} | TK_OP_DESIGUALTAT {$o = 1;}| TK_MESPETIT {$o = 2;}| TK_MESPETIT_IGUAL {$o = 3;}| TK_MESGRAN {$o = 4;} | TK_MESGRAN_IGUAL {$o = 5;};
 
 expressio3 returns [char t, Vector<Long> codeMain] locals [int p]
 @init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t;  $codeMain.addAll($e1.codeMain); }
@@ -497,8 +492,7 @@ expressio3 returns [char t, Vector<Long> codeMain] locals [int p]
                                                         }
                                                     }
                                                     else {
-                                                        error = true;
-                                                        System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                        notifyErrorListeners($i, $e1.t + " i " + $e2.t + " no es poden sumar o restar", null);
                                                     }
                                                 }
                                                 )*;
@@ -551,8 +545,7 @@ expressio4 returns [char t, Vector<Long> codeMain] locals [int p]
                                                     $t = 'I';
                                                 }
                                                 else {
-                                                    error = true;
-                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                    notifyErrorListeners($i, $e1.t + " i " + $e2.t + " no es poden dividir o multiplicar", null);
                                                 }
                                             }
                                             )*;
@@ -590,8 +583,7 @@ expressio5 returns [char t, Vector<Long> codeMain] locals [int p]
                                     }
                                 }
                                 else {
-                                    error = true;
-                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                    notifyErrorListeners($i, $e.t + " no es pot negar", null);
                                 }
                             };
 
@@ -599,7 +591,16 @@ expressio6 returns [char t, Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : v=valor { $t = $v.t; $codeMain.addAll($v.codeMain); } | TK_LPAREN e=expressio { $t = $e.t; $codeMain.addAll($e.codeMain); } TK_RPAREN;
 
 valor returns [char t, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : vtb=valorTipusBasic { $t = $vtb.t; $codeMain.addAll($vtb.codeMain); } | TK_STRING { $t = 'S'; } | i=TK_IDENT
+@init { $codeMain = new Vector<Long>(10); } : vtb=valorTipusBasic { $t = $vtb.t; $codeMain.addAll($vtb.codeMain);} |
+                                                s=TK_STRING
+                                                {
+                                                    $t = 'S';
+                                                    Long adr = x.addConstant("S",$s.text.substring(1,$s.text.length()-1));
+                                                    $codeMain.add(x.LDC_W);
+                                                    $codeMain.add(x.nByte(adr,2));
+                                                    $codeMain.add(x.nByte(adr,1));
+                                                }
+                                                | i=TK_IDENT
                                                 {
                                                     if(TS.existeix($i.text)) {
                                                         Registre r = TS.obtenir($i.text);
@@ -612,8 +613,7 @@ valor returns [char t, Vector<Long> codeMain]
                                                         }
                                                         $codeMain.add(new Long(r.getAdreca()));
                                                     } else {
-                                                        error = true;
-                                                        System.out.println("No existeix la variable a la línia " + $i.line);
+                                                        notifyErrorListeners($i, $i.text + " no està declarat", null);
                                                     }
                                                 }
                                                 | accesTupla | accesVector | cridaFuncio;
@@ -621,14 +621,18 @@ valor returns [char t, Vector<Long> codeMain]
 
 sentencia returns [Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); }: (a=asignacio { $codeMain.addAll($a.codeMain); } | e=escriure { $codeMain.addAll($e.codeMain); } | eln=escriureln { $codeMain.addAll($eln.codeMain); } |
-                                                condicional | per | mentre | cridaAccio | l=llegir { $codeMain.addAll($l.codeMain); });
+                                                c=condicional { $codeMain.addAll($c.codeMain); } | p=per { $codeMain.addAll($p.codeMain); } | m=mentre { $codeMain.addAll($m.codeMain); } |
+                                                cridaAccio | l=llegir { $codeMain.addAll($l.codeMain); });
 
 asignacio returns [Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); }: (i=TK_IDENT | accesTupla | accesVector) TK_ASSIGNACIO e=expressio TK_SEMI
                             {
                                 if(!(TS.existeix($i.text) && TS.obtenir($i.text).tipus == $e.t)) {
-                                    error = true;
-                                    System.out.println("Error al assignar un valor a una variable a la línia " + $i.line);
+                                    if(!(TS.existeix($i.text))) {
+                                        notifyErrorListeners($i, $i.text + " no està declarat", null);
+                                    } else {
+                                        notifyErrorListeners($i, $i.text + " i " + $e.t + " no tenen el mateix tipus", null);
+                                    }
                                 } else {
                                     Registre r = TS.obtenir($i.text);
 
@@ -651,25 +655,82 @@ asignacio returns [Vector<Long> codeMain]
                                 }
                             };
 
-condicional : i=TK_PC_SI e=expressio TK_PC_LLAVORS sentencia* (TK_PC_ALTRAMENT sentencia*)? TK_PC_FSI
+condicional returns [Vector<Long> codeMain] locals [Vector<Long> brancaCert, Vector<Long> brancaFalse]
+@init { $codeMain = new Vector<Long>(10); $brancaCert = new Vector<Long>(10); $brancaFalse = new Vector<Long>(10);}: i=TK_PC_SI e=expressio
+                                        TK_PC_LLAVORS (s1=sentencia { $brancaCert.addAll($s1.codeMain); })* (TK_PC_ALTRAMENT (s2=sentencia { $brancaFalse.addAll($s2.codeMain); })*)? TK_PC_FSI
                             {
                                 if($e.t != 'Z') {
-                                    error = true;
-                                    System.out.println("Error al fer un condicional a la línia " + $i.line);
+                                    notifyErrorListeners($i, "La condició ha de ser booleana", null);
+                                } else {
+                                    $codeMain.addAll($e.codeMain);
+                                    $codeMain.add(x.IFEQ);
+                                    Long salt=$brancaCert.size()+6L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($brancaCert);
+                                    $codeMain.add(x.GOTO);
+                                    salt=$brancaFalse.size()+3L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($brancaFalse);
                                 }
                             };
-per : i=TK_PC_PER TK_IDENT TK_PC_DE e1=expressio TK_PC_FINS e2=expressio TK_PC_FER sentencia* TK_PC_FPER
+per returns [Vector<Long> codeMain] locals [Long adreca, Vector<Long> codi]
+@init { $codeMain = new Vector<Long>(10); $codi = new Vector<Long>(10); }: TK_PC_PER i=TK_IDENT TK_PC_DE e1=expressio
+                    {
+                        $codeMain.addAll($e1.codeMain);
+                        if(TS.existeix($i.text)) {
+                            Registre r = TS.obtenir($i.text);
+                            $adreca = new Long(r.getAdreca());
+                            $codeMain.add(x.ISTORE);
+                            $codeMain.add($adreca);
+                        }
+                        else {
+                            notifyErrorListeners($i, $i.text + " no està declarada", null);
+                        }
+                    }
+                    TK_PC_FINS e2=expressio TK_PC_FER (s=sentencia { $codi.addAll($s.codeMain); })* TK_PC_FPER
                             {
-                                if(!($e1.t == 'I' && ($e2.t == 'I'))) {
-                                    error = true;
-                                    System.out.println("Error al fer un per a la línia " + $i.line);
+                                if(!($e1.t == 'I' && $e2.t == 'I')) {
+                                    notifyErrorListeners($i, $e1.t + " i " + $e2.t + " han de ser enters", null);
+                                } else {
+                                    $codeMain.add(x.ILOAD);
+                                    $codeMain.add($adreca);
+                                    $codeMain.addAll($e2.codeMain);
+                                    $codeMain.add(x.IF_ICMPGT);
+                                    Long salt=$codi.size()+12L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($codi);
+                                    $codeMain.add(x.ILOAD);
+                                    $codeMain.add($adreca);
+                                    $codeMain.add(x.ICONST_1);
+                                    $codeMain.add(x.IADD);
+                                    $codeMain.add(x.ISTORE);
+                                    $codeMain.add($adreca);
+                                    salt=2L+$e1.codeMain.size()-$codeMain.size();
+                                    $codeMain.add(x.GOTO);
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
                                 }
                             };
-mentre : i=TK_PC_MENTRE e=expressio TK_PC_FER sentencia*
+
+mentre returns [Vector<Long> codeMain] locals [Vector<Long> codi]
+@init { $codeMain = new Vector<Long>(10); $codi = new Vector<Long>(10);}: i=TK_PC_MENTRE e=expressio TK_PC_FER (s=sentencia { $codi.addAll($s.codeMain); })* TK_PC_FMENTRE
                             {
                                 if($e.t != 'Z') {
-                                    error = true;
-                                    System.out.println("Error al fer un while a la línia " + $i.line);
+                                    notifyErrorListeners($i, "La condició ha de ser booleana", null);
+                                } else {
+                                    $codeMain.addAll($e.codeMain);
+                                    $codeMain.add(x.IFEQ);
+                                    Long salt=$codi.size()+6L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($codi);
+                                    salt=0L-$codeMain.size();
+                                    $codeMain.add(x.GOTO);
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
                                 }
                             };
 
