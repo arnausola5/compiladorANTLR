@@ -1,11 +1,13 @@
-constants
-enter PI := 3;
-fconstants
+programa a
 
-programa xupala
 variables
-a : enter;
+r 	: real;
 fvariables
-a := 5;
-a := 100000;
+
+r := 3.4;
+
+llegir(r);
+escriureln(r);
+
+
 fprograma

@@ -28,6 +28,23 @@ import java.util.*;
 class provaBytecode {
 public static void main(String[] args) {
 
+	char var1 = (char)101;
+	System.out.println(var1);
+
+	String text = "348E-3";
+	int p = text.indexOf("E");
+	int num = Integer.parseInt(text.substring(p+2));
+	float valor = Float.parseFloat(text.substring(0, p));
+
+	System.out.println(num);
+	System.out.println(Math.pow(10, 3));
+	System.out.println(valor);
+
+	float r = valor / (float)Math.pow(10,3);
+
+	System.out.println(r);
+
+
 	Bytecode x=new Bytecode("Exemple");
 
 
