@@ -1,0 +1,63 @@
+//Declaracio de constants
+constants
+real PI  := 3.14159;
+real AVOGADRO  := 6.022E23;
+enter DEU := 10;
+car  cccc := 'f';
+boolea veritat := cert;
+fconstants
+
+
+//============= Programa principal ================
+programa ProgramaTest
+
+variables
+caracter : car;
+trobat : boolea;
+i : enter;
+nEnter : enter;
+nReal : real;
+operacio : car;
+fvariables
+
+escriure(cccc);
+
+trobat := false;
+i := 0;
+
+mentre no trobat & i < 10 fer
+escriureln("Entra un caracter: ");
+llegir(caracter);
+trobat := caracter == '#' ? cert : false;
+i := i + 1;
+fmentre
+
+si trobat llavors
+escriureln("Hem trobat el final de linia");
+altrament
+escriureln("No hem trobat el final de linia");
+fsi
+
+escriureln("Entra un nombre enter: ");
+llegir(nEnter);
+escriureln("Entra un nombre real: ");
+llegir(nReal);
+escriureln("Entra una operacio (+, -, *, /):");
+llegir(operacio);
+
+si operacio == '+' llavors
+escriure(nEnter + nReal);
+altrament
+si operacio == '-' llavors
+escriure(nEnter - nReal);
+altrament
+si operacio == '*' llavors
+escriure(nEnter * nReal);
+altrament
+escriure(nEnter / nReal);
+fsi
+fsi
+fsi
+
+fprograma
+

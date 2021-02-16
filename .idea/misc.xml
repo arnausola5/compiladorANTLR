@@ -6,7 +6,7 @@
         <PerGrammarGenerationSettings>
           <option name="fileName" value="$PROJECT_DIR$/src/main.g4" />
           <option name="autoGen" value="true" />
-          <option name="outputDir" value="E:\#GEINF\Quart\Compiladors\compiladorANTLR\src" />
+          <option name="outputDir" value="C:\Users\arnau\OneDrive\UdG\Quart\Compiladors\Pràctiques\Tokens\src" />
           <option name="libDir" value="" />
           <option name="encoding" value="" />
           <option name="pkg" value="" />

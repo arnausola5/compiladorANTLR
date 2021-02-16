@@ -1,0 +1,29 @@
+programa ProgramaTest
+
+variables
+e : enter;
+r : real;
+i : real;
+b : boolea;
+fvariables
+
+10/01/1998
+
+e := 0;
+r := 1.1;
+b := cert;
+
+escriure(a);
+
+escriure(e + b);
+escriure(b | r);
+
+si e llavors
+escriure("El tipus ha de ser boolea");
+fsi
+
+per i de 0 fins 10 fer
+fper
+
+fprograma
+
