@@ -1,9 +1,0 @@
-constants
-enter PI := 3;
-fconstants
-
-programa xupala
-variables
-a : enter;
-fvariables
-fprograma

@@ -12,7 +12,8 @@ grammar main;
     SymTable<Registre> TS = new SymTable<Registre>(1000);
     boolean error = false;
     Bytecode x;
-    int contVar = 0;
+    int contVar = 1;
+    Long saltLinia;
 
     //override method
     public void notifyErrorListeners(Token offendingToken, String msg, RecognitionException e)    {
@@ -26,6 +27,7 @@ grammar main;
 inici
 @init   {
             x = new Bytecode("Compilat");
+            saltLinia=x.addConstant("S","\n");
             Vector<Long> codeMain = new Vector<Long>(10);
         }
         : blocDeclaracioConstants? blocDeclaracioTipus? blocAccionsFuncions? p=programa blocImplementacio?
@@ -38,20 +40,17 @@ inici
 
 blocDeclaracioConstants : TK_PC_CONSTANTS (vc=variableConstants)* TK_PC_FCONSTANTS;
 
-variableConstants : tb=tipusBasic i=TK_IDENT TK_ASSIGNACIO vtb=valorTipusBasic TK_SEMI
+variableConstants : tb=tipusBasic i=TK_IDENT a=TK_ASSIGNACIO vtb=valorTipusBasic TK_SEMI
                     {
                         if($tb.t != $vtb.t) {
-                            error = true;
-                            System.out.println("Error al assignar constant a la línia " + $i.line);
-                            // notifyErrorListeners(variableConstants, "El tipus de tipusBasic i valorTipusBasic
+                            notifyErrorListeners($a, "El tipus de declaració i del valor no coincideix", null);
                         }
                         else {
                             if(TS.existeix($i.text)) {
-                                error = true;
-                                System.out.println("La constant ja existeix, línia " + $i.line);
+                                notifyErrorListeners($a, "La constant ja ha estat declarada", null);
                             }
                             else
-                                TS.inserir($i.text, new Registre($i.text, $tb.t, x.addConstName($i.text, String.valueOf($tb.t), $vtb.v).intValue()));
+                                TS.inserir($i.text, new Registre($i.text, $tb.t, x.addConstName($i.text, String.valueOf($tb.t), $vtb.v).intValue(), true));
                         }
                     };
 
@@ -62,15 +61,90 @@ tipusBasic returns [char t] : TK_TB_BOOLEA { $t = 'Z'; }
                             | TK_TB_DATA { $t = 'D'; };
 
 valorTipusBasic returns [char t, String v, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); }: tk=TK_BOOLEA { $t = 'Z'; $v = $tk.text; $codeMain.add(x.BIPUSH); if($v == "cert") $codeMain.add(1L); else $codeMain.add(0L); }
-                                            | TK_DATA { $t = 'D'; }
+@init { $codeMain = new Vector<Long>(10); }: tk=TK_BOOLEA { $t = 'Z'; $v = $tk.text; $codeMain.add(x.BIPUSH); if($v.equals("cert")) $codeMain.add(1L); else $codeMain.add(0L); }
+                                            | tk=TK_DATA
+                                            {
+                                                $t = 'D';
+
+                                                String valor = $tk.text;
+                                                String[] v = valor.split("/");
+                                                int dia = Integer.parseInt(v[0]);
+                                                int mes = Integer.parseInt(v[1]);
+                                                int any = Integer.parseInt(v[2]);
+
+                                                if(mes == 1 || mes == 3 || mes == 5 || mes == 7 || mes == 8 || mes == 10 || mes == 12) {
+                                                    if(dia > 31) {
+                                                        notifyErrorListeners($tk, "La data no és correcte", null);
+                                                    }
+                                                } else if(mes == 2) {
+                                                    if(dia > 28) {
+                                                        notifyErrorListeners($tk, "La data no és correcte", null);
+                                                    }
+                                                } else {
+                                                    if(dia > 30) {
+                                                        notifyErrorListeners($tk, "La data no és correcte", null);
+                                                    }
+                                                }
+                                            }
                                             | ve=valorEnter {$t = $ve.t; $v = $ve.v; $codeMain.addAll($ve.codeMain); }
-                                            | tk=TK_REAL { $t = 'F'; $v = $tk.text; $codeMain.add(x.BIPUSH); $codeMain.add((long)Float.floatToIntBits(Float.parseFloat($tk.text))); }
-                                            | tk=TK_CAR { $t = 'C'; $v = $tk.text; $codeMain.add(x.BIPUSH); int ascii = $tk.text.charAt(0); $codeMain.add((long)ascii); };
+                                            | tk=TK_REAL
+                                                {
+                                                    $t = 'F';
+                                                    Long adr = 0L;
+
+                                                    if($tk.text.contains("E")) {
+                                                        float resultat = 0;
+                                                        int p = $tk.text.indexOf("E");
+                                                        if($tk.text.charAt(p+1) == '-') {
+                                                            int num = Integer.parseInt($tk.text.substring(p+2));
+                                                            float valor = Float.parseFloat($tk.text.substring(0, p));
+
+                                                            resultat = valor / (float)Math.pow(10,num);
+                                                        } else {
+                                                            int num = Integer.parseInt($tk.text.substring(p+1));
+                                                            float valor = Float.parseFloat($tk.text.substring(0, p));
+
+                                                            resultat = valor * (float)Math.pow(10,num);
+                                                        }
+
+                                                        adr = x.addConstant("F",String.valueOf(resultat));
+                                                        $v = String.valueOf(resultat);
+                                                    }
+                                                    else {
+                                                        adr = x.addConstant("F",$tk.text);
+                                                        $v = $tk.text;
+                                                    }
+
+                                                    $codeMain.add(x.LDC_W);
+                                                    $codeMain.add(x.nByte(adr,2));
+                                                    $codeMain.add(x.nByte(adr,1));
+                                                }
+                                            | tk=TK_CAR
+                                                { $t = 'C'; $v = String.valueOf($tk.text.charAt(1));
+                                                Long adr = x.addConstant("C",$v);
+                                                $codeMain.add(x.LDC_W);
+                                                $codeMain.add(x.nByte(adr,2));
+                                                $codeMain.add(x.nByte(adr,1));
+                                                $codeMain.add(x.I2C);
+                                                };
 
 valorEnter returns [char t, String v, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : TK_ZERO { $t = 'I'; $v = "0"; $codeMain.add(x.BIPUSH); $codeMain.add(0l); }
-                                            | tk=TK_ENTER { $t = 'I'; $v = $tk.text; $codeMain.add(x.BIPUSH); $codeMain.add(new Long($tk.text)); };
+@init { $codeMain = new Vector<Long>(10); } : TK_ZERO
+                                            {
+                                                $t = 'I'; $v = "0";
+                                                Long adr = x.addConstant("I","0");
+                                                $codeMain.add(x.LDC_W);
+                                                $codeMain.add(x.nByte(adr,2));
+                                                $codeMain.add(x.nByte(adr,1));
+                                            }
+                                            | tk=TK_ENTER
+                                            {
+                                                $t = 'I'; $v = $tk.text;
+                                                Long adr = x.addConstant("I",$tk.text);
+                                                $codeMain.add(x.LDC_W);
+                                                $codeMain.add(x.nByte(adr,2));
+                                                $codeMain.add(x.nByte(adr,1));
+                                            };
 
 blocDeclaracioTipus : TK_PC_TIPUS (tipus)* TK_PC_FTIPUS;
 tipus : TK_IDENT TK_DOSPUNTS (tipusBasic | tipusBasicVector | tipusBasicTupla) TK_SEMI;
@@ -85,104 +159,363 @@ parametre: (TK_PC_ENT | TK_PC_ENTSOR)? TK_IDENT TK_DOSPUNTS (tipusBasic | TK_IDE
 declaracioAccio : TK_PC_ACCIO TK_IDENT TK_LPAREN parametres? TK_RPAREN TK_SEMI;
 
 programa returns [Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : TK_PC_PROGRAMA TK_IDENT bdv=blocDeclaracioVariables? { $codeMain.addAll($bdv.codeMain); } sentencia* TK_PC_FPROGRAMA;
+@init { $codeMain = new Vector<Long>(10); } : TK_PC_PROGRAMA TK_IDENT (bdv=blocDeclaracioVariables { $codeMain.addAll($bdv.codeMain); })? (s=sentencia { $codeMain.addAll($s.codeMain); } )* TK_PC_FPROGRAMA;
 
 blocDeclaracioVariables returns [Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : TK_PC_VARIABLES (v=variable { $codeMain.addAll($v.codeMain); } )* TK_PC_FVARIABLES;
 
 variable returns [Vector<Long> codeMain] locals [String vars]
-@init { $codeMain = new Vector<Long>(10); }: i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* TK_DOSPUNTS (tb=tipusBasic
+@init { $codeMain = new Vector<Long>(10); }: i=TK_IDENT { $vars = $i.text; } (TK_COMA j=TK_IDENT { $vars += ","+$j.text; })* dp=TK_DOSPUNTS (tb=tipusBasic
                                 {
                                     String[] v = $vars.split(",");
                                     for(int i = 0; i < v.length; i++) {
                                         if(!TS.existeix(v[i])) {
-                                            Registre r = new Registre(v[i], $tb.t, contVar++);
+                                            Registre r = new Registre(v[i], $tb.t);
                                             TS.inserir(v[i], r);
-
-                                            $codeMain.add(x.ACONST_NULL);
-                                            $codeMain.add(x.ISTORE);
-                                            $codeMain.add(new Long(r.getAdreca()));
-
                                         } else {
-                                            error = true;
-                                            System.out.println("Error al declarar una variable ja existent a la línia " + $i.line);
+                                            notifyErrorListeners($dp, "La variable ja ha estat declarada", null);
                                         }
                                     }
                                 }
                                 | TK_IDENT) TK_SEMI;
 
-ifThenElse returns [char t] : c=expressio1 i=TK_INTERROGANT
+ifThenElse returns [char t, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: c=expressio1 i=TK_INTERROGANT
             {
                 if($c.t != 'Z') {
-                    error = true;
-                    System.out.println("Error al assignar una condició no booleana a la línia " + $i.line);
+                    notifyErrorListeners($i, "La condició " + $c.text + " ha de ser booleana", null);
+                } else {
+                    $codeMain.addAll($c.codeMain);
                 }
             }
             ec=expressio1 TK_DOSPUNTS ef=expressio1
             {
                 if($ec.t != $ef.t && !(($ec.t == 'F' && $ef.t == 'I') || ($ec.t == 'I' && $ef.t == 'F'))) {
-                    error = true;
-                    System.out.println("Error de tipus a expressióCert i expressióFals a la línia " + $i.line);
+                    notifyErrorListeners($i, "Els tipus " + $ec.t + " i " + $ef.t + " no són vàlids", null);
                 } else {
+                    if($ec.t == 'F' || $ef.t == 'F') {
+                        if($ec.t == 'I')
+                            $ec.codeMain.add(x.I2F);
+                        if($ef.t == 'I')
+                            $ef.codeMain.add(x.I2F);
+                    }
+
+                    $codeMain.add(x.IFEQ);
+                    Long salt=6L+$ec.codeMain.size();
+                    $codeMain.add(x.nByte(salt,2));
+                    $codeMain.add(x.nByte(salt,1));
+                    $codeMain.addAll($ec.codeMain);
+                    $codeMain.add(x.GOTO);
+                    salt=3L+$ef.codeMain.size();
+                    $codeMain.add(x.nByte(salt,2));
+                    $codeMain.add(x.nByte(salt,1));
+                    $codeMain.addAll($ef.codeMain);
+
                     if($ec.t != $ef.t)
                         $t = 'F';
                     else
                         $t = $ec.t;
                 }
             };
-expressio returns [char t] : ite=ifThenElse { $t = $ite.t; } | e=expressio1 { $t = $e.t; };
-expressio1 returns [char t] locals [int p] : e1=expressio2 { $t = $e1.t; }
+
+expressio returns [char t, Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: ite=ifThenElse { $t = $ite.t; $codeMain.addAll($ite.codeMain); } | e=expressio1 { $t = $e.t; $codeMain.addAll($e.codeMain); };
+
+expressio1 returns [char t, Vector<Long> codeMain] locals [int p]
+@init { $codeMain = new Vector<Long>(10); }: e1=expressio2 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }
                                             ((i=TK_AND { $p = 0; }| i=TK_OR { $p = 1; }) e2=expressio2
                                             {
                                                 if($t == 'Z' && $e2.t == 'Z') {
-                                                    if($p == 0)
+                                                    $codeMain.addAll($e2.codeMain);
+
+                                                    if($p == 0) {
+                                                        $codeMain.add(x.IAND);
+
                                                         $t = 'Z';
-                                                    else
+                                                    } else {
+                                                        $codeMain.add(x.IOR);
+
                                                         $t = 'Z';
+                                                    }
                                                 }
                                                 else {
                                                     error = true;
-                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                    notifyErrorListeners($i, "Els tipus " + $e1.t + " o " + $e2.t + " no són booleans", null);
                                                 }
                                             }
                                             )*;
-expressio2 returns [char t] : e1=expressio3 { $t = $e1.t; }(operadorsBooleans e2=expressio3
+
+expressio2 returns [char t, Vector<Long> codeMain] locals [int o]
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio3 { $t = $e1.t; $codeMain.addAll($e1.codeMain); }((op=TK_OP_IGUALTAT {$o = 0;} | op=TK_OP_DESIGUALTAT {$o = 1;}| op=TK_MESPETIT {$o = 2;}| op=TK_MESPETIT_IGUAL {$o = 3;}| op=TK_MESGRAN {$o = 4;} | op=TK_MESGRAN_IGUAL {$o = 5;}) e2=expressio3
                                 {
-                                    if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F'))
+                                    if((($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) || ($t == 'C' && $e2.t == 'C')) {
+                                        if ($t == 'F' || $e2.t == 'F'){
+                                            if ($t != 'F'){
+                                                $codeMain.add(x.I2F);
+                                            }
+                                            $codeMain.addAll($e2.codeMain);
+                                            if ($e2.t != 'F'){
+                                                $codeMain.add(x.I2F);
+                                            }
+                                            $codeMain.add(x.FCMPG);
+                                            if ($o == 0){
+                                                $codeMain.add(x.IFEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 1){
+                                                $codeMain.add(x.IFEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                            }
+                                            else if ($o == 2){
+                                                $codeMain.add(x.IFLT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 3){
+                                                $codeMain.add(x.IFLE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 4){
+                                                $codeMain.add(x.IFGT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 5){
+                                                $codeMain.add(x.IFGE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                        }
+                                        else if (($t == 'I' && $e2.t == 'I') || ($t == 'C' && $e2.t == 'C')){
+                                            $codeMain.addAll($e2.codeMain);
+                                            if ($o == 0){
+                                                $codeMain.add(x.IF_ICMPEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 1){
+                                                $codeMain.add(x.IF_ICMPEQ);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                            }
+                                            else if ($o == 2){
+                                                $codeMain.add(x.IF_ICMPLT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 3){
+                                                $codeMain.add(x.IF_ICMPLE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 4){
+                                                $codeMain.add(x.IF_ICMPGT);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                            else if ($o == 5){
+                                                $codeMain.add(x.IF_ICMPGE);
+                                                Long salt=8L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(0L);
+                                                $codeMain.add(x.GOTO);
+                                                salt=5L;
+                                                $codeMain.add(x.nByte(salt,2));
+                                                $codeMain.add(x.nByte(salt,1));
+                                                $codeMain.add(x.BIPUSH);
+                                                $codeMain.add(1L);
+                                            }
+                                        }
                                         $t = 'Z';
-                                    else if($t == 'Z' && $e2.t == 'Z')
+                                    }
+                                    else if($t == 'Z' && $e2.t == 'Z' && ($o == 0 || $o == 1)){
+                                        $codeMain.addAll($e2.codeMain);
+                                        if ($o == 0){
+                                            $codeMain.add(x.IF_ICMPEQ);
+                                            Long salt=8L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(0L);
+                                            $codeMain.add(x.GOTO);
+                                            salt=5L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(1L);
+                                        }
+                                        else if ($o == 1){
+                                            $codeMain.add(x.IF_ICMPEQ);
+                                            Long salt=8L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(1L);
+                                            $codeMain.add(x.GOTO);
+                                            salt=5L;
+                                            $codeMain.add(x.nByte(salt,2));
+                                            $codeMain.add(x.nByte(salt,1));
+                                            $codeMain.add(x.BIPUSH);
+                                            $codeMain.add(0L);
+                                        }
+
                                         $t = 'Z';
-                                    else if($t == 'C' && $e2.t == 'C')
-                                        $t = 'Z';
+
+                                    }
                                     else {
-                                        error = true;
-                                        System.out.println("Conflicte de tipus amb operadors booleans");
+                                        notifyErrorListeners($op, $e1.t + " i " + $e2.t + " no es poden comparar", null);
                                     }
                                 }
                                 )*;
-operadorsBooleans : TK_OP_IGUALTAT | TK_OP_DESIGUALTAT | TK_MESPETIT | TK_MESPETIT_IGUAL | TK_MESGRAN | TK_MESGRAN_IGUAL;
 
 expressio3 returns [char t, Vector<Long> codeMain] locals [int p]
-@init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t; }
+@init { $codeMain = new Vector<Long>(10); } : e1=expressio4 { $t = $e1.t;  $codeMain.addAll($e1.codeMain); }
                                                 ((i=TK_OP_PLUS { $p = 0; } | i=TK_OP_MENYS { $p = 1; }) e2=expressio4
                                                 {
                                                     if(($t == 'I' || $t == 'F') && ($e2.t == 'I' || $e2.t == 'F')) {
                                                         if($p == 0) {
-                                                            if($t == 'F' || $e2.t == 'F')
+                                                            if($t == 'F' || $e2.t == 'F'){
+                                                                if($t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.addAll($e2.codeMain);
+                                                                if ($e2.t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.add(x.FADD);
                                                                 $t = 'F';
-                                                            else
+                                                            }
+                                                            else {
+                                                                $codeMain.addAll($e2.codeMain);
+                                                                $codeMain.add(x.IADD);
                                                                 $t = 'I';
+                                                            }
                                                         }
                                                         else {
-                                                            if($t == 'F' || $e2.t == 'F')
+                                                            if($t == 'F' || $e2.t == 'F'){
+                                                                if($t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.addAll($e2.codeMain);
+                                                                if ($e2.t != 'F'){
+                                                                    $codeMain.add(x.I2F);
+                                                                }
+                                                                $codeMain.add(x.FSUB);
                                                                 $t = 'F';
-                                                            else
+                                                            }
+                                                            else{
+                                                                $codeMain.addAll($e2.codeMain);
+                                                                $codeMain.add(x.ISUB);
                                                                 $t = 'I';
+                                                            }
                                                         }
                                                     }
                                                     else {
-                                                        error = true;
-                                                        System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                        notifyErrorListeners($i, $e1.t + " i " + $e2.t + " no es poden sumar o restar", null);
                                                     }
                                                 }
                                                 )*;
@@ -235,8 +568,7 @@ expressio4 returns [char t, Vector<Long> codeMain] locals [int p]
                                                     $t = 'I';
                                                 }
                                                 else {
-                                                    error = true;
-                                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                                    notifyErrorListeners($i, $e1.t + " i " + $e2.t + " no es poden dividir o multiplicar", null);
                                                 }
                                             }
                                             )*;
@@ -274,8 +606,7 @@ expressio5 returns [char t, Vector<Long> codeMain] locals [int p]
                                     }
                                 }
                                 else {
-                                    error = true;
-                                    System.out.println("Conflicte de tipus a la línia " + $i.line);
+                                    notifyErrorListeners($i, $e.t + " no es pot negar", null);
                                 }
                             };
 
@@ -283,92 +614,301 @@ expressio6 returns [char t, Vector<Long> codeMain]
 @init { $codeMain = new Vector<Long>(10); } : v=valor { $t = $v.t; $codeMain.addAll($v.codeMain); } | TK_LPAREN e=expressio { $t = $e.t; $codeMain.addAll($e.codeMain); } TK_RPAREN;
 
 valor returns [char t, Vector<Long> codeMain]
-@init { $codeMain = new Vector<Long>(10); } : vtb=valorTipusBasic { $t = $vtb.t; $codeMain.addAll($vtb.codeMain); } | TK_STRING { $t = 'S'; } | i=TK_IDENT
+@init { $codeMain = new Vector<Long>(10); } : vtb=valorTipusBasic { $t = $vtb.t; $codeMain.addAll($vtb.codeMain);} |
+                                                s=TK_STRING
+                                                {
+                                                    $t = 'S';
+                                                    Long adr = x.addConstant("S",$s.text.substring(1,$s.text.length()-1));
+                                                    $codeMain.add(x.LDC_W);
+                                                    $codeMain.add(x.nByte(adr,2));
+                                                    $codeMain.add(x.nByte(adr,1));
+                                                }
+                                                | i=TK_IDENT
                                                 {
                                                     if(TS.existeix($i.text)) {
                                                         Registre r = TS.obtenir($i.text);
                                                         $t = r.getTipus();
-                                                        $codeMain.add(x.ILOAD);
-                                                        $codeMain.add(new Long(r.getAdreca()));
+
+                                                        if(r.getConstant()) {
+                                                            $codeMain.add(x.LDC_W);
+                                                            $codeMain.add(x.nByte(new Long(r.getAdreca()),2));
+                                                            $codeMain.add(x.nByte(new Long(r.getAdreca()),1));
+                                                        }
+                                                        else {
+                                                            if($t == 'I' || $t == 'C' || $t == 'Z') {
+                                                                $codeMain.add(x.ILOAD);
+                                                            } else if($t == 'F') {
+                                                                $codeMain.add(x.FLOAD);
+                                                            }
+                                                            $codeMain.add(new Long(r.getAdreca()));
+                                                        }
                                                     } else {
-                                                        error = true;
-                                                        System.out.println("No existeix la variable a la línia " + $i.line);
+                                                        notifyErrorListeners($i, $i.text + " no està declarat", null);
                                                     }
                                                 }
                                                 | accesTupla | accesVector | cridaFuncio;
+
+
+sentencia returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: (a=asignacio { $codeMain.addAll($a.codeMain); } | e=escriure { $codeMain.addAll($e.codeMain); } | eln=escriureln { $codeMain.addAll($eln.codeMain); } |
+                                                c=condicional { $codeMain.addAll($c.codeMain); } | p=per { $codeMain.addAll($p.codeMain); } | m=mentre { $codeMain.addAll($m.codeMain); } |
+                                                cridaAccio | l=llegir { $codeMain.addAll($l.codeMain); });
+
+asignacio returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: (i=TK_IDENT | accesTupla | accesVector) TK_ASSIGNACIO e=expressio TK_SEMI
+                            {
+                                if(!(TS.existeix($i.text) && TS.obtenir($i.text).tipus == $e.t)) {
+                                    if(!(TS.existeix($i.text))) {
+                                        notifyErrorListeners($i, $i.text + " no està declarat", null);
+                                    } else {
+                                        notifyErrorListeners($i, $i.text + " i " + $e.t + " no tenen el mateix tipus", null);
+                                    }
+                                } else {
+                                    Registre r = TS.obtenir($i.text);
+
+                                    if(r.getAdreca() == 0) {
+                                        r.putAdreca(contVar);
+                                        contVar++;
+                                    }
+
+                                    char t = r.getTipus();
+
+                                    $codeMain.addAll($e.codeMain);
+
+                                    if(t == 'I' || t == 'C' || t == 'Z') {
+                                        $codeMain.add(x.ISTORE);
+                                    } else if(t == 'F') {
+                                        $codeMain.add(x.FSTORE);
+                                    }
+
+                                    $codeMain.add(new Long(r.getAdreca()));
+                                }
+                            };
+
+condicional returns [Vector<Long> codeMain] locals [Vector<Long> brancaCert, Vector<Long> brancaFalse]
+@init { $codeMain = new Vector<Long>(10); $brancaCert = new Vector<Long>(10); $brancaFalse = new Vector<Long>(10);}: i=TK_PC_SI e=expressio
+                                        TK_PC_LLAVORS (s1=sentencia { $brancaCert.addAll($s1.codeMain); })* (TK_PC_ALTRAMENT (s2=sentencia { $brancaFalse.addAll($s2.codeMain); })*)? TK_PC_FSI
+                            {
+                                if($e.t != 'Z') {
+                                    notifyErrorListeners($i, "La condició ha de ser booleana", null);
+                                } else {
+                                    $codeMain.addAll($e.codeMain);
+                                    $codeMain.add(x.IFEQ);
+                                    Long salt=$brancaCert.size()+6L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($brancaCert);
+                                    $codeMain.add(x.GOTO);
+                                    salt=$brancaFalse.size()+3L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($brancaFalse);
+                                }
+                            };
+per returns [Vector<Long> codeMain] locals [Long adreca, Vector<Long> codi]
+@init { $codeMain = new Vector<Long>(10); $codi = new Vector<Long>(10); }: TK_PC_PER i=TK_IDENT TK_PC_DE e1=expressio
+                    {
+                        $codeMain.addAll($e1.codeMain);
+                        if(TS.existeix($i.text)) {
+                            Registre r = TS.obtenir($i.text);
+                            $adreca = new Long(r.getAdreca());
+                            $codeMain.add(x.ISTORE);
+                            $codeMain.add($adreca);
+                        }
+                        else {
+                            notifyErrorListeners($i, $i.text + " no està declarada", null);
+                        }
+                    }
+                    TK_PC_FINS e2=expressio TK_PC_FER (s=sentencia { $codi.addAll($s.codeMain); })* TK_PC_FPER
+                            {
+                                if(!($e1.t == 'I' && $e2.t == 'I')) {
+                                    notifyErrorListeners($i, $e1.t + " i " + $e2.t + " han de ser enters", null);
+                                } else {
+                                    $codeMain.add(x.ILOAD);
+                                    $codeMain.add($adreca);
+                                    $codeMain.addAll($e2.codeMain);
+                                    $codeMain.add(x.IF_ICMPGT);
+                                    Long salt=$codi.size()+12L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($codi);
+                                    $codeMain.add(x.ILOAD);
+                                    $codeMain.add($adreca);
+                                    $codeMain.add(x.ICONST_1);
+                                    $codeMain.add(x.IADD);
+                                    $codeMain.add(x.ISTORE);
+                                    $codeMain.add($adreca);
+                                    salt=2L+$e1.codeMain.size()-$codeMain.size();
+                                    $codeMain.add(x.GOTO);
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                }
+                            };
+
+mentre returns [Vector<Long> codeMain] locals [Vector<Long> codi]
+@init { $codeMain = new Vector<Long>(10); $codi = new Vector<Long>(10);}: i=TK_PC_MENTRE e=expressio TK_PC_FER (s=sentencia { $codi.addAll($s.codeMain); })* TK_PC_FMENTRE
+                            {
+                                if($e.t != 'Z') {
+                                    notifyErrorListeners($i, "La condició ha de ser booleana", null);
+                                } else {
+                                    $codeMain.addAll($e.codeMain);
+                                    $codeMain.add(x.IFEQ);
+                                    Long salt=$codi.size()+6L;
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                    $codeMain.addAll($codi);
+                                    salt=0L-$codeMain.size();
+                                    $codeMain.add(x.GOTO);
+                                    $codeMain.add(x.nByte(salt,2));
+                                    $codeMain.add(x.nByte(salt,1));
+                                }
+                            };
+
+llegir returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: TK_PC_LLEGIR TK_LPAREN i=TK_IDENT TK_RPAREN TK_SEMI
+            {
+                if(TS.existeix($i.text)) {
+                    Registre r = TS.obtenir($i.text);
+
+                    if(r.getAdreca() == 0) {
+                        r.putAdreca(contVar);
+                        contVar++;
+                    }
+
+                    char t = r.getTipus();
+
+                    $codeMain.add(x.INVOKESTATIC);
+                    if(t == 'I') {
+                        $codeMain.add(x.nByte(x.mGetInt,2));
+                        $codeMain.add(x.nByte(x.mGetInt,1));
+                        $codeMain.add(x.ISTORE);
+                        $codeMain.add(new Long(r.getAdreca()));
+                    } else if(t == 'C') {
+                        $codeMain.add(x.nByte(x.mGetChar,2));
+                        $codeMain.add(x.nByte(x.mGetChar,1));
+                        $codeMain.add(x.ISTORE);
+                        $codeMain.add(new Long(r.getAdreca()));
+                    } else if(t == 'F') {
+                        $codeMain.add(x.nByte(x.mGetFloat,2));
+                        $codeMain.add(x.nByte(x.mGetFloat,1));
+                        $codeMain.add(x.FSTORE);
+                        $codeMain.add(new Long(r.getAdreca()));
+                    } else if(t == 'Z') {
+                        $codeMain.add(x.nByte(x.mGetBoolean,2));
+                        $codeMain.add(x.nByte(x.mGetBoolean,1));
+                        $codeMain.add(x.FSTORE);
+                        $codeMain.add(new Long(r.getAdreca()));
+                    }
+                }
+            };
+
+escriure returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: i=TK_PC_ESCRIURE TK_LPAREN e1=expressio
+            {
+                $codeMain.addAll($e1.codeMain);
+                $codeMain.add(x.INVOKESTATIC);
+                if($e1.t == 'I') {
+                    $codeMain.add(x.nByte(x.mPutInt,2));
+                    $codeMain.add(x.nByte(x.mPutInt,1));
+                } else if($e1.t == 'C') {
+                    $codeMain.add(x.nByte(x.mPutChar,2));
+                    $codeMain.add(x.nByte(x.mPutChar,1));
+                } else if($e1.t == 'F') {
+                    $codeMain.add(x.nByte(x.mPutFloat,2));
+                    $codeMain.add(x.nByte(x.mPutFloat,1));
+                } else if($e1.t == 'Z') {
+                    $codeMain.add(x.nByte(x.mPutBoolean,2));
+                    $codeMain.add(x.nByte(x.mPutBoolean,1));
+                } else if($e1.t == 'S') {
+                    $codeMain.add(x.nByte(x.mPutString,2));
+                    $codeMain.add(x.nByte(x.mPutString,1));
+                }
+            }
+            (TK_COMA e2=expressio
+            {
+               {
+                   $codeMain.addAll($e2.codeMain);
+                   $codeMain.add(x.INVOKESTATIC);
+                   if($e2.t == 'I') {
+                       $codeMain.add(x.nByte(x.mPutInt,2));
+                       $codeMain.add(x.nByte(x.mPutInt,1));
+                   } else if($e2.t == 'C') {
+                       $codeMain.add(x.nByte(x.mPutChar,2));
+                       $codeMain.add(x.nByte(x.mPutChar,1));
+                   } else if($e2.t == 'F') {
+                       $codeMain.add(x.nByte(x.mPutFloat,2));
+                       $codeMain.add(x.nByte(x.mPutFloat,1));
+                   } else if($e2.t == 'Z') {
+                       $codeMain.add(x.nByte(x.mPutBoolean,2));
+                       $codeMain.add(x.nByte(x.mPutBoolean,1));
+                   } else if($e2.t == 'S') {
+                       $codeMain.add(x.nByte(x.mPutString,2));
+                       $codeMain.add(x.nByte(x.mPutString,1));
+                   }
+               }
+            }
+            )* TK_RPAREN TK_SEMI;
+
+escriureln returns [Vector<Long> codeMain]
+@init { $codeMain = new Vector<Long>(10); }: i=TK_PC_ESCRIURELN TK_LPAREN (e1=expressio
+            {
+                $codeMain.addAll($e1.codeMain);
+                $codeMain.add(x.INVOKESTATIC);
+                if($e1.t == 'I') {
+                    $codeMain.add(x.nByte(x.mPutInt,2));
+                    $codeMain.add(x.nByte(x.mPutInt,1));
+                } else if($e1.t == 'C') {
+                    $codeMain.add(x.nByte(x.mPutChar,2));
+                    $codeMain.add(x.nByte(x.mPutChar,1));
+                } else if($e1.t == 'F') {
+                    $codeMain.add(x.nByte(x.mPutFloat,2));
+                    $codeMain.add(x.nByte(x.mPutFloat,1));
+                } else if($e1.t == 'Z') {
+                    $codeMain.add(x.nByte(x.mPutBoolean,2));
+                    $codeMain.add(x.nByte(x.mPutBoolean,1));
+                } else if($e1.t == 'S') {
+                    $codeMain.add(x.nByte(x.mPutString,2));
+                    $codeMain.add(x.nByte(x.mPutString,1));
+                }
+            }
+            (TK_COMA e2=expressio
+            {
+               {
+                   $codeMain.addAll($e2.codeMain);
+                   $codeMain.add(x.INVOKESTATIC);
+                   if($e2.t == 'I') {
+                       $codeMain.add(x.nByte(x.mPutInt,2));
+                       $codeMain.add(x.nByte(x.mPutInt,1));
+                   } else if($e2.t == 'C') {
+                       $codeMain.add(x.nByte(x.mPutChar,2));
+                       $codeMain.add(x.nByte(x.mPutChar,1));
+                   } else if($e2.t == 'F') {
+                       $codeMain.add(x.nByte(x.mPutFloat,2));
+                       $codeMain.add(x.nByte(x.mPutFloat,1));
+                   } else if($e2.t == 'Z') {
+                       $codeMain.add(x.nByte(x.mPutBoolean,2));
+                       $codeMain.add(x.nByte(x.mPutBoolean,1));
+                   } else if($e2.t == 'S') {
+                       $codeMain.add(x.nByte(x.mPutString,2));
+                       $codeMain.add(x.nByte(x.mPutString,1));
+                   }
+               }
+            }
+            )*)? TK_RPAREN TK_SEMI
+            {
+                $codeMain.add(x.LDC_W);
+                $codeMain.add(x.nByte(saltLinia,2));
+                $codeMain.add(x.nByte(saltLinia,1));
+                $codeMain.add(x.INVOKESTATIC);
+                $codeMain.add(x.nByte(x.mPutString,2));
+                $codeMain.add(x.nByte(x.mPutString,1));
+            };
+
+cridaAccio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN TK_SEMI;
 accesTupla : TK_IDENT TK_PUNT TK_IDENT;
 accesVector : TK_IDENT TK_OVECTOR expressio TK_TVECTOR;
 cridaFuncio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN;
 
-sentencia : (asignacio | condicional | per | mentre | cridaAccio | llegir | escriure | escriureln);
-
-asignacio : (i=TK_IDENT | accesTupla | accesVector) TK_ASSIGNACIO e=expressio TK_SEMI
-                            {
-                                if(!(TS.existeix($i.text) && TS.obtenir($i.text).tipus == $e.t)) {
-                                    error = true;
-                                    System.out.println("Error al assignar un valor a una variable a la línia " + $i.line);
-                                }
-                            };
-condicional : i=TK_PC_SI e=expressio TK_PC_LLAVORS sentencia* (TK_PC_ALTRAMENT sentencia*)? TK_PC_FSI
-                            {
-                                if($e.t != 'Z') {
-                                    error = true;
-                                    System.out.println("Error al fer un condicional a la línia " + $i.line);
-                                }
-                            };
-per : i=TK_PC_PER TK_IDENT TK_PC_DE e1=expressio TK_PC_FINS e2=expressio TK_PC_FER sentencia* TK_PC_FPER
-                            {
-                                if(!($e1.t == 'I' && ($e2.t == 'I'))) {
-                                    error = true;
-                                    System.out.println("Error al fer un per a la línia " + $i.line);
-                                }
-                            };
-mentre : i=TK_PC_MENTRE e=expressio TK_PC_FER sentencia*
-                            {
-                                if($e.t != 'Z') {
-                                    error = true;
-                                    System.out.println("Error al fer un while a la línia " + $i.line);
-                                }
-                            };
-cridaAccio : TK_IDENT TK_LPAREN (expressio (TK_COMA expressio)*)? TK_RPAREN TK_SEMI;
-
-llegir : TK_PC_LLEGIR TK_LPAREN i=TK_IDENT TK_RPAREN TK_SEMI
-            {
-                if(!TS.existeix($i.text)) {
-                    error = true;
-                    System.out.println("Error al llegir a la línia " + $i.line);
-                }
-            };
-escriure : i=TK_PC_ESCRIURE TK_LPAREN e1=expressio
-            {
-                if($e1.t != 'S') {
-                    error = true;
-                    System.out.println("Error al escriure a la línia " + $i.line);
-                }
-            }
-            (TK_COMA e2=expressio
-            {
-               if($e2.t != 'S') {
-                   error = true;
-                   System.out.println("Error al escriure a la línia " + $i.line);
-               }
-            }
-            )* TK_RPAREN TK_SEMI;
-escriureln : i=TK_PC_ESCRIURELN TK_LPAREN (e1=expressio
-            {
-                if($e1.t != 'S') {
-                    error = true;
-                    System.out.println("Error al escriureln a la línia " + $i.line);
-                }
-            }
-            (TK_COMA e2=expressio
-            {
-                if($e2.t != 'S') {
-                   error = true;
-                   System.out.println("Error al escriureln a la línia " + $i.line);
-               }
-            }
-            )*)? TK_RPAREN TK_SEMI;
 
 blocImplementacio : (implementacioFuncio | implementacioAccio)*;
 implementacioAccio : TK_PC_ACCIO TK_IDENT TK_LPAREN parametres? TK_RPAREN blocDeclaracioVariables? sentencia* TK_PC_FACCIO;
@@ -451,10 +991,10 @@ LLETRA: 'a' .. 'z' | 'A' .. 'Z';
 fragment
 CARACTERS_ASCII: '!' .. '~';
 TK_BOOLEA: 'cert' | 'false';
-TK_DATA: (DIGIT | '0') DIGIT '/' (DIGIT | '0') DIGIT '/' (DIGIT | '0') (DIGIT | '0') (DIGIT | '0') (DIGIT | '0');
+TK_DATA: (DIGIT ('0' | DIGIT) | '0' DIGIT)  '/' (DIGIT ('0' | DIGIT) | '0' DIGIT) '/' (DIGIT | '0') (DIGIT | '0') (DIGIT | '0') (DIGIT | '0');
 TK_ZERO: '0';
 TK_ENTER: DIGIT (DIGIT | '0')*;
 TK_IDENT: LLETRA (LLETRA | DIGIT | '0' | '_')*;
-TK_REAL: (DIGIT | '0')* '.' (DIGIT | '0')* (('I' | 'E-') TK_ENTER)?;
+TK_REAL: (DIGIT | '0')* '.' (DIGIT | '0')* (('E' | 'E-') TK_ENTER)?;
 TK_CAR: '\'' (CARACTERS_ASCII | ' ') '\'';
 TK_STRING: '"' (CARACTERS_ASCII | ' ')* '"';
