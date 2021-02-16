@@ -28,6 +28,10 @@ import java.util.*;
 class provaBytecode {
 public static void main(String[] args) {
 
+
+	String a = "hola";
+	System.out.println(a.substring(1,a.length()-1));
+
 	Bytecode x=new Bytecode("Exemple");
 
 
@@ -60,9 +64,6 @@ public static void main(String[] args) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	int a = "a".charAt(0);
-
-	System.out.println(a);
 
 
 	// Vector de Long per col.locar el codi del Main
